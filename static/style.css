@@ -1,31 +1,108 @@
-/* style.css */
+/* Общие стили */
 body {
   font-family: Arial, sans-serif;
   margin: 0;
-  padding: 20px;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
   height: 100vh;
   background-color: #f4f4f4;
 }
 
-#controls {
-  margin-bottom: 20px;
+/* Стили для шапки */
+header#header {
+  background-color: #ffffff;
+  padding: 15px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
 }
 
+#controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+#upload-btn {
+  padding: 10px 20px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s ease;
+}
+
+#upload-btn:hover {
+  background-color: #0056b3;
+}
+
+/* Стили для ползунка */
+#power-slider-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#power-slider {
+  width: 200px;
+}
+
+#power-value {
+  font-size: 14px;
+  font-weight: bold;
+}
+
+/* Стили для контейнера графа */
 #graph-container {
-  width: 90%;
-  height: 80vh;
-  overflow: hidden; /* Убираем полосы прокрутки */
-  position: relative;
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
   background-color: #fff;
-  border: 1px solid #ddd;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 #graph {
   width: 100%;
   height: 100%;
-  overflow: visible; /* Разрешаем выход за границы контейнера */
+}
+
+/* Стили для кнопки скачивания */
+#download-btn {
+  padding: 10px 20px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s ease;
+}
+
+#download-btn:hover {
+  background-color: #1e7e34;
+}
+
+#download-btn:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+/* Стили для кнопки очистки графа */
+#clear-btn {
+  padding: 10px 20px;
+  background-color: #dc3545; /* Красный цвет */
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s ease;
+}
+
+#clear-btn:hover {
+  background-color: #b02a37;
 }
