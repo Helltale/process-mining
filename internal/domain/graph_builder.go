@@ -88,6 +88,13 @@ func (gb *GraphBuilder) GetGraph() *Graph {
 	return gb.graph
 }
 
+func (gb *GraphBuilder) ClearGraph() {
+	gb.graph = &Graph{}
+	gb.nodeMap = make(map[string]*Node)
+	gb.edgeMap = make(map[string]*Edge)
+	gb.sessionMap = make(map[string]*Session)
+}
+
 func (gb *GraphBuilder) processEvent(event *Event) {
 	session := gb.sessionMap[event.SessionID]
 	if session == nil {

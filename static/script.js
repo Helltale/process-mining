@@ -16,8 +16,6 @@ async function uploadFile(file) {
       throw new Error('Ошибка загрузки файла');
     }
 
-    alert('Файл успешно загружен!');
-
     // Получаем данные графа с сервера
     const graphResponse = await fetch('/graph');
     if (!graphResponse.ok) {
@@ -191,6 +189,33 @@ async function downloadPNG() {
   }
 }
 
+// Функция для очистки графа
+async function clearGraph() {
+  try {
+    const response = await fetch('/clear', {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      throw new Error('Не удалось очистить граф.');
+    }
+
+    // Очищаем данные графа на фронте
+    graphData = null;
+
+    // Очищаем контейнер графа
+    const graphContainer = document.getElementById('graph');
+    graphContainer.innerHTML = '';
+
+    // Деактивируем кнопку скачивания
+    document.getElementById('download-btn').disabled = true;
+
+  } catch (error) {
+    console.error('Ошибка очистки графа:', error);
+    alert(error.message || 'Не удалось очистить граф.');
+  }
+}
+
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
   const fileInput = document.getElementById('file-input');
@@ -198,8 +223,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const downloadBtn = document.getElementById('download-btn');
   const powerSlider = document.getElementById('power-slider');
   const powerValue = document.getElementById('power-value');
+  const clearBtn = document.getElementById('clear-btn');
 
-  if (!fileInput || !uploadBtn || !downloadBtn || !powerSlider || !powerValue) {
+  if (!fileInput || !uploadBtn || !downloadBtn || !powerSlider || !powerValue || !clearBtn) {
     console.error('Один или несколько элементов DOM не найдены.');
     return;
   }
@@ -222,6 +248,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Клик на кнопку "Скачать PNG"
   downloadBtn.addEventListener('click', downloadPNG);
+
+  // Клик на кнопку "Очистить граф"
+  clearBtn.addEventListener('click', clearGraph);
 
   // Изменение значения ползунка
   powerSlider.addEventListener('input', () => {
