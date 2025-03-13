@@ -82,6 +82,11 @@ func (h *GraphHandler) ServeGraphData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// // Логирование данных для отладки
+	// for _, edge := range graphData.Edges {
+	// 	fmt.Printf("Edge: %s -> %s, Style: %s\n", edge.From, edge.To, edge.Style)
+	// }
+
 	// Преобразуем данные в формат, понятный фронтенду
 	cytoscapeData := struct {
 		Nodes []map[string]*domain.Node `json:"nodes"`
