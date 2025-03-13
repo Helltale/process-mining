@@ -1,6 +1,5 @@
-let currentMode = 'events';
-let vizInstance;
-let isGraphBuilt = false; // Флаг для отслеживания состояния графа
+let vizInstance; // Глобальная переменная для хранения экземпляра Viz.js
+let graphData; // Глобальная переменная для хранения данных графа
 
 // Функция для отправки файла на сервер
 async function uploadFile(file) {
@@ -17,13 +16,17 @@ async function uploadFile(file) {
       throw new Error('Ошибка загрузки файла');
     }
 
-    alert('Файл успешно загружен!');
-    isGraphBuilt = true;
-    document.getElementById('download-btn').disabled = false; // Активируем кнопку скачивания
-    renderGraph(); // После загрузки файла рисуем граф
+    // Получаем данные графа с сервера
+    const graphResponse = await fetch('/graph');
+    if (!graphResponse.ok) {
+      throw new Error('Не удалось получить данные графа.');
+    }
+
+    graphData = await graphResponse.json(); // Сохраняем данные графа
+    renderGraph(); // Рисуем граф после загрузки данных
   } catch (error) {
     console.error('Ошибка:', error);
-    alert('Не удалось загрузить файл');
+    alert(error.message || 'Не удалось загрузить файл или построить граф.');
   }
 }
 
@@ -44,7 +47,7 @@ function convertToDot(data) {
   // Добавление ребер
   data.edges.forEach(edge => {
     const [events, time] = edge.data.label.split('\n'); // Разделение метки на события и время
-    const label = currentMode === 'events' ? events : time; // Выбор метки в зависимости от режима
+    const label = events; // Показываем только количество событий
     dot += `  "${edge.data.from}" -> "${edge.data.to}" [label="${label}"];\n`;
   });
 
@@ -55,13 +58,31 @@ function convertToDot(data) {
 // Отрисовка графа
 async function renderGraph() {
   try {
-    const response = await fetch('/graph');
-    if (!response.ok) {
-      throw new Error('Граф еще не построен. Загрузите CSV-файл.');
+    if (!graphData) {
+      throw new Error('Граф еще не загружен. Загрузите CSV-файл.');
     }
 
-    const graphData = await response.json();
-    const dot = convertToDot(graphData); // Преобразование данных в формат DOT
+    const powerSlider = document.getElementById('power-slider');
+    const powerValue = parseInt(powerSlider.value); // Текущее значение ползунка (0–100%)
+
+    // Получаем диапазон мощности ребер
+    const counts = graphData.edges.map(edge => edge.data.count);
+    const min = Math.min(...counts);
+    const max = Math.max(...counts);
+
+    // Вычисляем пороговое значение мощности
+    const threshold = min + ((max - min) * (100 - powerValue)) / 100;
+
+    // Фильтрация ребер по мощности
+    const filteredEdges = graphData.edges.filter(edge => edge.data.count >= threshold);
+
+    // Создаем новый объект данных с отфильтрованными ребрами
+    const filteredData = {
+      nodes: graphData.nodes, // Узлы остаются без изменений
+      edges: filteredEdges, // Только отфильтрованные ребра
+    };
+
+    const dot = convertToDot(filteredData); // Преобразование данных в формат DOT
 
     if (!vizInstance) {
       vizInstance = new Viz({
@@ -72,7 +93,12 @@ async function renderGraph() {
     // Рендеринг DOT в SVG
     const svg = await vizInstance.renderString(dot);
     const graphContainer = document.getElementById('graph');
-    graphContainer.innerHTML = svg; // Вставка SVG в DOM
+
+    // Очищаем контейнер перед новой отрисовкой
+    graphContainer.innerHTML = '';
+
+    // Вставляем SVG в DOM
+    graphContainer.innerHTML = svg;
 
     // Инициализация Panzoom
     const panzoomElement = graphContainer.querySelector('svg');
@@ -99,12 +125,6 @@ async function renderGraph() {
   }
 }
 
-// Обновление графа при смене режима
-function updateGraph() {
-  currentMode = document.querySelector('input[name="edge-label"]:checked').value; // Получение текущего режима
-  renderGraph(); // Перерисовка графа
-}
-
 // Функция для скачивания графа в формате PNG
 async function downloadPNG() {
   try {
@@ -127,24 +147,39 @@ async function downloadPNG() {
     // Создаем временный canvas для конвертации SVG в PNG
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    const img = new Image();
 
+    // Получаем реальные размеры SVG
+    const svgWidth = svgElement.width.baseVal.value || svgElement.clientWidth;
+    const svgHeight = svgElement.height.baseVal.value || svgElement.clientHeight;
+
+    // Устанавливаем размеры canvas с учетом DPR (Device Pixel Ratio)
+    const dpr = window.devicePixelRatio || 1; // Плотность пикселей устройства
+    canvas.width = svgWidth * dpr;
+    canvas.height = svgHeight * dpr;
+
+    // Масштабируем контекст canvas для повышения качества
+    ctx.scale(dpr, dpr);
+
+    // Создаем изображение из SVG
+    const img = new Image();
     img.onload = () => {
-      canvas.width = img.width;
-      canvas.height = img.height;
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, svgWidth, svgHeight);
 
       // Конвертируем canvas в PNG
-      canvas.toBlob((blob) => {
-        const pngUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = pngUrl;
-        a.download = 'graph.png';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(pngUrl);
-      }, 'image/png');
+      canvas.toBlob(
+        (blob) => {
+          const pngUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = pngUrl;
+          a.download = 'graph.png';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(pngUrl);
+        },
+        'image/png',
+        1.0 // Настройка качества PNG (1.0 — максимальное качество)
+      );
     };
 
     img.src = url;
@@ -154,25 +189,72 @@ async function downloadPNG() {
   }
 }
 
+// Функция для очистки графа
+async function clearGraph() {
+  try {
+    const response = await fetch('/clear', {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      throw new Error('Не удалось очистить граф.');
+    }
+
+    // Очищаем данные графа на фронте
+    graphData = null;
+
+    // Очищаем контейнер графа
+    const graphContainer = document.getElementById('graph');
+    graphContainer.innerHTML = '';
+
+    // Деактивируем кнопку скачивания
+    document.getElementById('download-btn').disabled = true;
+
+  } catch (error) {
+    console.error('Ошибка очистки графа:', error);
+    alert(error.message || 'Не удалось очистить граф.');
+  }
+}
+
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
   const fileInput = document.getElementById('file-input');
   const uploadBtn = document.getElementById('upload-btn');
   const downloadBtn = document.getElementById('download-btn');
+  const powerSlider = document.getElementById('power-slider');
+  const powerValue = document.getElementById('power-value');
+  const clearBtn = document.getElementById('clear-btn');
 
+  if (!fileInput || !uploadBtn || !downloadBtn || !powerSlider || !powerValue || !clearBtn) {
+    console.error('Один или несколько элементов DOM не найдены.');
+    return;
+  }
+
+  // Клик на кнопку "Загрузить файл"
   uploadBtn.addEventListener('click', () => {
-    if (!fileInput.files.length) {
-      alert('Выберите файл для загрузки');
-      return;
-    }
-
-    const file = fileInput.files[0];
-    uploadFile(file);
+    fileInput.click(); // Программно вызываем выбор файла
   });
 
+  // Обработка выбора файла
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    if (file) {
+      uploadFile(file); // Автоматическая загрузка файла при выборе
+      downloadBtn.disabled = false; // Активируем кнопку скачивания
+    } else {
+      alert('Выберите файл для загрузки.');
+    }
+  });
+
+  // Клик на кнопку "Скачать PNG"
   downloadBtn.addEventListener('click', downloadPNG);
 
-  document.querySelectorAll('input[name="edge-label"]').forEach(input => {
-    input.addEventListener('change', updateGraph); // Обработчик изменения режима
+  // Клик на кнопку "Очистить граф"
+  clearBtn.addEventListener('click', clearGraph);
+
+  // Изменение значения ползунка
+  powerSlider.addEventListener('input', () => {
+    powerValue.textContent = `${powerSlider.value}%`; // Обновляем отображаемое значение
+    renderGraph(); // Перерисовываем граф при изменении ползунка
   });
 });

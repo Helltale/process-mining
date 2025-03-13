@@ -4,32 +4,40 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Process Graph Visualization</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css"> <!-- Подключение CSS -->
 </head>
 <body>
-  <div id="controls">
-    <input type="file" id="file-input" accept=".csv" />
-    <button id="upload-btn">Загрузить файл</button>
-    <button id="download-btn" disabled>Скачать PNG</button>
-    <br /><br />
-    <label>
-      <input type="radio" name="edge-label" value="events" checked> Показать количество событий
-    </label>
-    &nbsp;&nbsp;
-    <label>
-      <input type="radio" name="edge-label" value="time"> Показать среднее время
-    </label>
-  </div>
+  <!-- Шапка с инструментами -->
+  <header id="header">
+    <div id="controls">
+      <!-- Кнопка для загрузки файла -->
+      <input type="file" id="file-input" accept=".csv" style="display: none;" />
+      <button id="upload-btn">Загрузить файл</button>
+  
+      <!-- Ползунок для выбора мощности ребер -->
+      <div id="power-slider-container">
+        <label for="power-slider">Мощность графа (%):</label>
+        <input type="range" id="power-slider" min="0" max="100" value="100" />
+        <span id="power-value">100%</span>
+      </div>
+  
+      <!-- Кнопка для скачивания графа -->
+      <button id="download-btn" disabled>Скачать PNG</button>
+  
+      <!-- Кнопка для очистки графа -->
+      <button id="clear-btn">Очистить граф</button>
+    </div>
+  </header>
 
-  <div id="graph-container">
+  <!-- Основная область для графа -->
+  <main id="graph-container">
     <div id="graph"></div>
-  </div>
+  </main>
 
-  <!-- Подключение Viz.js -->
-  <script src="/js/viz.js"></script>
-  <script src="/js/full.render.js"></script>
-  <!-- Подключение Panzoom -->
-  <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom/dist/panzoom.min.js"></script>
-  <script src="script.js"></script>
+  <!-- Подключение скриптов -->
+  <script src="js/viz.js"></script> <!-- Viz.js -->
+  <script src="js/full.render.js"></script> <!-- Full Render -->
+  <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom/dist/panzoom.min.js"></script> <!-- Panzoom -->
+  <script src="script.js"></script> <!-- Локальный скрипт -->
 </body>
 </html>

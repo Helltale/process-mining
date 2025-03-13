@@ -11,8 +11,8 @@ example of a csv file
 
 ```csv
 {
-    "SessionID", 
-    "Timestamp", 
-    "Description"
+    "SessionID",    - unique id of process
+    "Timestamp",    - datetime of event
+    "Description"   - name of event
 }
 ```

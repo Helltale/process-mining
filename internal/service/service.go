@@ -19,3 +19,7 @@ func (s *GraphService) BuildGraphFromCSV(filePath string) error {
 func (s *GraphService) GetGraphData() (*domain.Graph, error) {
 	return s.graphBuilder.GetGraph(), nil
 }
+
+func (s *GraphService) ClearGraph() {
+	s.graphBuilder.ClearGraph()
+}
