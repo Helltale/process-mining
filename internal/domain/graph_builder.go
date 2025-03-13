@@ -1,11 +1,10 @@
 package domain
 
 import (
-	"encoding/csv"
 	"fmt"
-	"io"
-	"os"
 	"time"
+
+	"github.com/Helltale/process-mining/internal/infrastructure"
 )
 
 type Graph struct {
@@ -45,19 +44,21 @@ type GraphBuilder struct {
 	nodeMap    map[string]*Node
 	edgeMap    map[string]*Edge
 	sessionMap map[string]*Session
+	csvReader  *infrastructure.CSVReader
 }
 
-func NewGraphBuilder() *GraphBuilder {
+func NewGraphBuilder(csvReader *infrastructure.CSVReader) *GraphBuilder {
 	return &GraphBuilder{
 		graph:      &Graph{},
 		nodeMap:    make(map[string]*Node),
 		edgeMap:    make(map[string]*Edge),
 		sessionMap: make(map[string]*Session),
+		csvReader:  csvReader,
 	}
 }
 
 func (gb *GraphBuilder) BuildGraph(filePath string) error {
-	err := gb.readAndProcessCSV(filePath, func(record []string) error {
+	err := gb.csvReader.ReadAndProcess(filePath, func(record []string) error {
 		timestamp, err := time.Parse(time.RFC3339, record[1])
 		if err != nil {
 			return fmt.Errorf("ошибка парсинга времени: %v", err)
@@ -108,6 +109,53 @@ func (gb *GraphBuilder) finalizeGraph() {
 		edge.Label = fmt.Sprintf("%d\n%.2f sec avg", edge.Count, edge.AvgDuration)
 		gb.graph.Edges = append(gb.graph.Edges, edge)
 	}
+
+	// Добавляем специальные узлы "Начало" и "Конец"
+	startNode := &Node{
+		ID:    "start",
+		Label: "Начало процесса",
+		Count: len(gb.sessionMap),
+		Total: len(gb.sessionMap),
+		Color: "green", // Цвет для начального узла
+	}
+	gb.graph.Nodes = append(gb.graph.Nodes, startNode)
+
+	endNode := &Node{
+		ID:    "end",
+		Label: "Конец",
+		Count: len(gb.sessionMap),
+		Total: len(gb.sessionMap),
+		Color: "red", // Цвет для конечного узла
+	}
+	gb.graph.Nodes = append(gb.graph.Nodes, endNode)
+
+	// Добавляем связи между "Начало" -> первый узел и последний узел -> "Конец"
+	for _, session := range gb.sessionMap {
+		events := session.Events
+		if len(events) == 0 {
+			continue
+		}
+
+		// Связь "Начало" -> первый узел
+		firstEvent := events[0]
+		startKey := "start_" + firstEvent.Desc
+		startEdge := gb.getEdge(startKey, "start", firstEvent.Desc)
+		startEdge.Count++
+		if startEdge.Count == 1 {
+			// Если это новая связь, добавляем ее в граф
+			gb.graph.Edges = append(gb.graph.Edges, startEdge)
+		}
+
+		// Связь последний узел -> "Конец"
+		lastEvent := events[len(events)-1]
+		endKey := lastEvent.Desc + "_end"
+		endEdge := gb.getEdge(endKey, lastEvent.Desc, "end")
+		endEdge.Count++
+		if endEdge.Count == 1 {
+			// Если это новая связь, добавляем ее в граф
+			gb.graph.Edges = append(gb.graph.Edges, endEdge)
+		}
+	}
 }
 
 func (gb *GraphBuilder) processSession(session *Session) {
@@ -145,7 +193,7 @@ func (gb *GraphBuilder) getNode(desc string) *Node {
 		node = &Node{
 			ID:    desc,
 			Label: desc,
-			Color: "blue",
+			Color: "blue", // Устанавливаем значение по умолчанию
 		}
 		gb.nodeMap[desc] = node
 	}
@@ -162,34 +210,4 @@ func (gb *GraphBuilder) getEdge(key, from, to string) *Edge {
 		gb.edgeMap[key] = edge
 	}
 	return edge
-}
-
-func (gb *GraphBuilder) readAndProcessCSV(filePath string, processFunc func([]string) error) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	_, err = reader.Read() // Пропуск заголовка
-	if err != nil && err != io.EOF {
-		return err
-	}
-
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		if err := processFunc(record); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
