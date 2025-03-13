@@ -45,7 +45,8 @@ function convertToDot(data) {
   data.edges.forEach(edge => {
     const [events, time] = edge.data.label.split('\n'); // Разделение метки на события и время
     const label = currentMode === 'events' ? events : time; // Выбор метки в зависимости от режима
-    dot += `  "${edge.data.from}" -> "${edge.data.to}" [label="${label}"];\n`;
+    const style = edge.data.style === "dashed" ? " [style=dashed]" : ""; // Проверяем стиль линии
+    dot += `  "${edge.data.from}" -> "${edge.data.to}" [label="${label}"${style}];\n`;
   });
 
   dot += '}';
@@ -61,7 +62,10 @@ async function renderGraph() {
     }
 
     const graphData = await response.json();
+    console.log('Graph Data:', graphData); // Логирование данных
+
     const dot = convertToDot(graphData); // Преобразование данных в формат DOT
+    console.log('DOT String:', dot); // Логирование DOT-строки
 
     if (!vizInstance) {
       vizInstance = new Viz({

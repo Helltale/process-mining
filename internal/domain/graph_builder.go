@@ -26,6 +26,7 @@ type Edge struct {
 	Count       int     `json:"count"`
 	AvgDuration float64 `json:"-"`
 	Label       string  `json:"label"`
+	Style       string  `json:"style"` // стиль линии (solid, dashed и т.д.)
 }
 
 type Event struct {
@@ -141,6 +142,7 @@ func (gb *GraphBuilder) finalizeGraph() {
 		startKey := "start_" + firstEvent.Desc
 		startEdge := gb.getEdge(startKey, "start", firstEvent.Desc)
 		startEdge.Count++
+		startEdge.Style = "dashed" // Устанавливаем стиль линии как пунктирный
 		if startEdge.Count == 1 {
 			// Если это новая связь, добавляем ее в граф
 			gb.graph.Edges = append(gb.graph.Edges, startEdge)
@@ -151,6 +153,7 @@ func (gb *GraphBuilder) finalizeGraph() {
 		endKey := lastEvent.Desc + "_end"
 		endEdge := gb.getEdge(endKey, lastEvent.Desc, "end")
 		endEdge.Count++
+		endEdge.Style = "dashed" // Устанавливаем стиль линии как пунктирный
 		if endEdge.Count == 1 {
 			// Если это новая связь, добавляем ее в граф
 			gb.graph.Edges = append(gb.graph.Edges, endEdge)
