@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Process Graph Visualization</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="controls">
+    <input type="file" id="file-input" accept=".csv" />
+    <button id="upload-btn">Загрузить файл</button>
+    <button id="download-btn" disabled>Скачать PNG</button>
+    <br /><br />
+    <label>
+      <input type="radio" name="edge-label" value="events" checked> Показать количество событий
+    </label>
+    &nbsp;&nbsp;
+    <label>
+      <input type="radio" name="edge-label" value="time"> Показать среднее время
+    </label>
+  </div>
+
+  <div id="graph-container">
+    <div id="graph"></div>
+  </div>
+
+  <!-- Подключение Viz.js -->
+  <script src="/js/viz.js"></script>
+  <script src="/js/full.render.js"></script>
+  <!-- Подключение Panzoom -->
+  <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom/dist/panzoom.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
