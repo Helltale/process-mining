@@ -112,3 +112,14 @@ func (h *GraphHandler) ServeGraphData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+func (h *GraphHandler) ClearGraph(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
+		return
+	}
+
+	h.graphService.ClearGraph()
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Граф успешно очищен"))
+}

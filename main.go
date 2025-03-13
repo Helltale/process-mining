@@ -28,6 +28,7 @@ func main() {
 	http.Handle("/", http.FileServer(http.Dir("./static"))) // Статические файлы
 	http.HandleFunc("/upload", graphHandler.UploadFile)     // Загрузка CSV
 	http.HandleFunc("/graph", graphHandler.ServeGraphData)  // Получение данных графа
+	http.HandleFunc("/clear", graphHandler.ClearGraph)      // Очистка графа
 
 	// Настройка сервера с увеличенными таймаутами
 	srv := &http.Server{
