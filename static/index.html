@@ -13,13 +13,16 @@
       <!-- Кнопка для загрузки файла -->
       <input type="file" id="file-input" accept=".csv" style="display: none;" />
       <button id="upload-btn">Загрузить файл</button>
-
+  
       <!-- Ползунок для выбора мощности ребер -->
       <div id="power-slider-container">
         <label for="power-slider">Мощность графа (%):</label>
         <input type="range" id="power-slider" min="0" max="100" value="100" />
         <span id="power-value">100%</span>
       </div>
+  
+      <!-- Кнопка для скачивания графа -->
+      <button id="download-btn" disabled>Скачать PNG</button>
     </div>
   </header>
 

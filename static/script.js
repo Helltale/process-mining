@@ -127,14 +127,79 @@ async function renderGraph() {
   }
 }
 
+// Функция для скачивания графа в формате PNG
+async function downloadPNG() {
+  try {
+    const graphContainer = document.getElementById('graph');
+    const svgElement = graphContainer.querySelector('svg');
+
+    if (!svgElement) {
+      throw new Error('Граф еще не построен. Загрузите CSV-файл.');
+    }
+
+    // Клонируем SVG для корректного экспорта
+    const clone = svgElement.cloneNode(true);
+    const serializer = new XMLSerializer();
+    const svgString = serializer.serializeToString(clone);
+
+    // Создаем Blob из SVG
+    const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+
+    // Создаем временный canvas для конвертации SVG в PNG
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Получаем реальные размеры SVG
+    const svgWidth = svgElement.width.baseVal.value || svgElement.clientWidth;
+    const svgHeight = svgElement.height.baseVal.value || svgElement.clientHeight;
+
+    // Устанавливаем размеры canvas с учетом DPR (Device Pixel Ratio)
+    const dpr = window.devicePixelRatio || 1; // Плотность пикселей устройства
+    canvas.width = svgWidth * dpr;
+    canvas.height = svgHeight * dpr;
+
+    // Масштабируем контекст canvas для повышения качества
+    ctx.scale(dpr, dpr);
+
+    // Создаем изображение из SVG
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, svgWidth, svgHeight);
+
+      // Конвертируем canvas в PNG
+      canvas.toBlob(
+        (blob) => {
+          const pngUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = pngUrl;
+          a.download = 'graph.png';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(pngUrl);
+        },
+        'image/png',
+        1.0 // Настройка качества PNG (1.0 — максимальное качество)
+      );
+    };
+
+    img.src = url;
+  } catch (error) {
+    console.error('Ошибка скачивания PNG:', error);
+    alert(error.message || 'Не удалось скачать PNG');
+  }
+}
+
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
   const fileInput = document.getElementById('file-input');
   const uploadBtn = document.getElementById('upload-btn');
+  const downloadBtn = document.getElementById('download-btn');
   const powerSlider = document.getElementById('power-slider');
   const powerValue = document.getElementById('power-value');
 
-  if (!fileInput || !uploadBtn || !powerSlider || !powerValue) {
+  if (!fileInput || !uploadBtn || !downloadBtn || !powerSlider || !powerValue) {
     console.error('Один или несколько элементов DOM не найдены.');
     return;
   }
@@ -149,10 +214,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const file = fileInput.files[0];
     if (file) {
       uploadFile(file); // Автоматическая загрузка файла при выборе
+      downloadBtn.disabled = false; // Активируем кнопку скачивания
     } else {
       alert('Выберите файл для загрузки.');
     }
   });
+
+  // Клик на кнопку "Скачать PNG"
+  downloadBtn.addEventListener('click', downloadPNG);
 
   // Изменение значения ползунка
   powerSlider.addEventListener('input', () => {
