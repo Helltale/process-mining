@@ -13,7 +13,7 @@ event_descriptions = [
     "Register", "Place Order", "Checkout", "Payment", "Confirmation"
 ]
 
-num_sessions = 1000000  
+num_sessions = 3000000  
 events_per_session = 10  
 time_between_events = timedelta(minutes=5) 
 
@@ -22,7 +22,7 @@ def generate_hashed_session_id(session_id):
     hash_object = hashlib.md5(str(session_id).encode())
     return hash_object.hexdigest()  
 
-with open('datasets/largest_dataset3.csv', 'w', newline='') as file:
+with open('datasets/largest_dataset5.csv', 'w', newline='') as file:
     writer = csv.writer(file)
     writer.writerow(["SessionID", "Timestamp", "Description"])  
     
@@ -31,7 +31,7 @@ with open('datasets/largest_dataset3.csv', 'w', newline='') as file:
         hashed_session_id = generate_hashed_session_id(session_id)
         session_start_time = generate_random_date()
   
-        num_events = random.randint(3, events_per_session)
+        num_events = random.randint(5, events_per_session)
         events = random.choices(event_descriptions, k=num_events) 
         
         for i, event in enumerate(events):
