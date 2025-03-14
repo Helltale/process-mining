@@ -60,6 +60,7 @@ func NewGraphBuilder(csvReader *infrastructure.CSVReader) *GraphBuilder {
 
 func (gb *GraphBuilder) BuildGraph(filePath string) error {
 	err := gb.csvReader.ReadAndProcess(filePath, func(record []string) error {
+<<<<<<< HEAD
 		// Проверяем количество полей
 		if len(record) != 3 {
 			return fmt.Errorf("некорректная строка: %v", record)
@@ -72,6 +73,13 @@ func (gb *GraphBuilder) BuildGraph(filePath string) error {
 		}
 
 		// Создаем событие
+=======
+		timestamp, err := time.Parse(time.RFC3339, record[1])
+		if err != nil {
+			return fmt.Errorf("ошибка парсинга времени: %v", err)
+		}
+
+>>>>>>> f4083c59781fc3409640d3d349ebbb0a82c4673e
 		event := &Event{
 			ID:        record[0],
 			SessionID: record[0],
@@ -79,7 +87,10 @@ func (gb *GraphBuilder) BuildGraph(filePath string) error {
 			Desc:      record[2],
 		}
 
+<<<<<<< HEAD
 		// Обрабатываем событие
+=======
+>>>>>>> f4083c59781fc3409640d3d349ebbb0a82c4673e
 		gb.processEvent(event)
 		return nil
 	})
