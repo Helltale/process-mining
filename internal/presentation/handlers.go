@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 
 	"github.com/Helltale/process-mining/internal/domain"
+	"github.com/Helltale/process-mining/internal/infrastructure"
 	"github.com/Helltale/process-mining/internal/service"
 )
 
@@ -20,36 +22,42 @@ func NewGraphHandler(graphService *service.GraphService) *GraphHandler {
 }
 
 func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
+	log.Println("Начало обработки запроса на загрузку файла")
+
+	cleaner := infrastructure.NewTMPCleaner()
+	if err := cleaner.ClearTempFiles(); err != nil {
+		log.Printf("Ошибка очистки временных файлов: %v", err)
+	}
+
 	if r.Method != http.MethodPost {
+		log.Println("Метод не поддерживается")
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Установка лимита на размер тела запроса (например, 3 ГБ)
 	r.Body = http.MaxBytesReader(w, r.Body, 3*1024*1024*1024) // 3 ГБ
-
-	// Проверка наличия файла
 	file, _, err := r.FormFile("file")
 	if err != nil {
+		log.Printf("Ошибка получения файла: %v", err)
 		http.Error(w, "Ошибка загрузки файла", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
-	// Создаем временный файл
 	tempFile, err := os.CreateTemp("", "uploaded-*.csv")
 	if err != nil {
+		log.Printf("Ошибка создания временного файла: %v", err)
 		http.Error(w, "Ошибка создания временного файла", http.StatusInternalServerError)
 		return
 	}
 	defer tempFile.Close()
 
-	// Копируем содержимое загруженного файла во временный файл по частям
 	buf := make([]byte, 1024*1024) // Буфер размером 1 МБ
 	for {
 		n, err := file.Read(buf)
 		if n > 0 {
 			if _, writeErr := tempFile.Write(buf[:n]); writeErr != nil {
+				log.Printf("Ошибка записи во временный файл: %v", writeErr)
 				http.Error(w, "Ошибка записи во временный файл", http.StatusInternalServerError)
 				return
 			}
@@ -58,21 +66,23 @@ func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if err != nil {
+			log.Printf("Ошибка чтения файла: %v", err)
 			http.Error(w, "Ошибка чтения файла", http.StatusInternalServerError)
 			return
 		}
 	}
 
-	// Вызов сервисного слоя для обработки файла
+	log.Println("Файл успешно загружен. Начинается обработка...")
 	err = h.graphService.BuildGraphFromCSV(tempFile.Name())
 	if err != nil {
+		log.Printf("Ошибка построения графа: %v", err)
 		http.Error(w, fmt.Sprintf("Ошибка построения графа: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Отправляем успешный ответ
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Файл успешно загружен и граф построен"))
+	log.Println("Обработка завершена успешно")
 }
 
 func (h *GraphHandler) ServeGraphData(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +124,11 @@ func (h *GraphHandler) ServeGraphData(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *GraphHandler) ClearGraph(w http.ResponseWriter, r *http.Request) {
+	cleaner := infrastructure.NewTMPCleaner()
+	if err := cleaner.ClearTempFiles(); err != nil {
+		log.Printf("Ошибка очистки временных файлов: %v", err)
+	}
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
