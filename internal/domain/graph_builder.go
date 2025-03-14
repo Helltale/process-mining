@@ -60,11 +60,18 @@ func NewGraphBuilder(csvReader *infrastructure.CSVReader) *GraphBuilder {
 
 func (gb *GraphBuilder) BuildGraph(filePath string) error {
 	err := gb.csvReader.ReadAndProcess(filePath, func(record []string) error {
-		timestamp, err := time.Parse(time.RFC3339, record[1])
-		if err != nil {
-			return fmt.Errorf("ошибка парсинга времени: %v", err)
+		// Проверяем количество полей
+		if len(record) != 3 {
+			return fmt.Errorf("некорректная строка: %v", record)
 		}
 
+		// Парсим временную метку
+		timestamp, err := time.Parse(time.RFC3339, record[1])
+		if err != nil {
+			return fmt.Errorf("ошибка парсинга времени '%s': %v", record[1], err)
+		}
+
+		// Создаем событие
 		event := &Event{
 			ID:        record[0],
 			SessionID: record[0],
@@ -72,6 +79,7 @@ func (gb *GraphBuilder) BuildGraph(filePath string) error {
 			Desc:      record[2],
 		}
 
+		// Обрабатываем событие
 		gb.processEvent(event)
 		return nil
 	})

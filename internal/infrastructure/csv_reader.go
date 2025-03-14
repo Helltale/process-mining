@@ -1,23 +1,16 @@
 package infrastructure
 
 import (
-	"encoding/csv"
-	"fmt"
-	"io"
+	"bufio"
 	"log"
 	"os"
-	"path/filepath"
+	"strings"
 )
 
 type CSVReader struct{}
-type TMPCleaner struct{}
 
 func NewCSVReader() *CSVReader {
 	return &CSVReader{}
-}
-
-func NewTMPCleaner() *TMPCleaner {
-	return &TMPCleaner{}
 }
 
 func (r *CSVReader) ReadAndProcess(filePath string, processFunc func([]string) error) error {
@@ -27,47 +20,25 @@ func (r *CSVReader) ReadAndProcess(filePath string, processFunc func([]string) e
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
-	_, err = reader.Read() // without file header
-	if err != nil && err != io.EOF {
-		return err
+	scanner := bufio.NewScanner(file)
+
+	// Пропускаем заголовок
+	if scanner.Scan() {
+		header := scanner.Text()
+		log.Printf("Пропущен заголовок: %s", header)
 	}
 
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
+	// Обрабатываем остальные строки
+	for scanner.Scan() {
+		line := scanner.Text()
+		record := strings.Split(line, ",") // Разделяем строку на поля
 		if err := processFunc(record); err != nil {
 			return err
 		}
 	}
 
-	return nil
-}
-
-func (c *TMPCleaner) ClearTempFiles() error {
-	// Указываем путь к директории /tmp
-	dir := "/tmp"
-
-	// Читаем содержимое директории
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return fmt.Errorf("ошибка чтения директории %s: %v", dir, err)
-	}
-
-	// Удаляем все файлы в директории
-	for _, file := range files {
-		filePath := filepath.Join(dir, file.Name())
-		if err := os.Remove(filePath); err != nil {
-			log.Printf("Ошибка удаления файла %s: %v", filePath, err)
-		} else {
-			log.Printf("Файл удален: %s", filePath)
-		}
+	if err := scanner.Err(); err != nil {
+		return err
 	}
 
 	return nil

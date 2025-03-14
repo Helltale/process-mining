@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/Helltale/process-mining/internal/domain"
 	"github.com/Helltale/process-mining/internal/infrastructure"
@@ -24,18 +23,13 @@ func NewGraphHandler(graphService *service.GraphService) *GraphHandler {
 func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	log.Println("Начало обработки запроса на загрузку файла")
 
-	cleaner := infrastructure.NewTMPCleaner()
-	if err := cleaner.ClearTempFiles(); err != nil {
-		log.Printf("Ошибка очистки временных файлов: %v", err)
-	}
-
 	if r.Method != http.MethodPost {
 		log.Println("Метод не поддерживается")
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, 3*1024*1024*1024) // 3 ГБ
+	r.Body = http.MaxBytesReader(w, r.Body, 6*1024*1024*1024) // Лимит 6 ГБ // TODO ВЫНЕСТИ В CONFIG
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		log.Printf("Ошибка получения файла: %v", err)
@@ -44,15 +38,18 @@ func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	tempFile, err := os.CreateTemp("", "uploaded-*.csv")
+	// Создаем временный файл
+	tmpManager := infrastructure.NewTMPFileManager()
+	tmpManager.DeleteTempFile() // Удаляем файл после использования
+
+	tempFile, err := tmpManager.CreateTempFile("uploaded-", "csv")
 	if err != nil {
 		log.Printf("Ошибка создания временного файла: %v", err)
 		http.Error(w, "Ошибка создания временного файла", http.StatusInternalServerError)
 		return
 	}
-	defer tempFile.Close()
 
-	buf := make([]byte, 1024*1024) // Буфер размером 1 МБ
+	buf := make([]byte, 1024*1024) // Буфер размером 1 МБ // TODO ВЫНЕСТИ В CONFIG
 	for {
 		n, err := file.Read(buf)
 		if n > 0 {
@@ -124,10 +121,9 @@ func (h *GraphHandler) ServeGraphData(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *GraphHandler) ClearGraph(w http.ResponseWriter, r *http.Request) {
-	cleaner := infrastructure.NewTMPCleaner()
-	if err := cleaner.ClearTempFiles(); err != nil {
-		log.Printf("Ошибка очистки временных файлов: %v", err)
-	}
+
+	tmpManager := infrastructure.NewTMPFileManager()
+	tmpManager.DeleteTempFile()
 
 	if r.Method != http.MethodPost {
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
