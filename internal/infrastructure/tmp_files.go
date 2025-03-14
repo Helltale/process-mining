@@ -31,7 +31,7 @@ func (t *TMPFileManager) CreateTempFile(prefix, suffix string) (*os.File, error)
 
 // DeleteTempFile удаляет все временные файлы в пользовательской директории
 func (m *TMPFileManager) DeleteTempFile() error {
-	tempDir := "./tmp" // Пользовательская директория для временных файлов // TODO ВЫНЕСТИ В CONFIG
+	tempDir := "./tmp" // Пользовательская директория для временных файлов // TODO ВЫНЕСТИ В CONFIG 123
 
 	// Читаем содержимое директории
 	files, err := os.ReadDir(tempDir)
