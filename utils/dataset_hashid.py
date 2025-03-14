@@ -31,7 +31,7 @@ with open('datasets/largest_dataset5.csv', 'w', newline='') as file:
         hashed_session_id = generate_hashed_session_id(session_id)
         session_start_time = generate_random_date()
   
-        num_events = random.randint(5, events_per_session)
+        num_events = random.randint(8, events_per_session)
         events = random.choices(event_descriptions, k=num_events) 
         
         for i, event in enumerate(events):
