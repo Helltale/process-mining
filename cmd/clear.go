@@ -14,16 +14,12 @@ var clearCmd = &cobra.Command{
 	Short: "Очистка данных графа",
 	Long:  "Очищает данные графа на бэке.",
 	Run: func(cmd *cobra.Command, args []string) {
-		// Инициализация инфраструктурного слоя
+
 		csvReader := infrastructure.NewCSVReader()
-
-		// Инициализация доменного слоя
 		graphBuilder := domain.NewGraphBuilder(csvReader)
-
-		// Инициализация сервисного слоя
 		graphService := service.NewGraphService(graphBuilder)
 
-		// Очистка графа
+		// clear graph
 		graphService.ClearGraph()
 		fmt.Println("Граф успешно очищен.")
 	},
