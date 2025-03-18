@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"log"
 	"os"
-	"runtime"
 	"strings"
 	"sync"
 )
@@ -63,14 +62,23 @@ func (r *CSVReader) ReadAndProcessConcurrent(filePath string, processFunc func([
 	}
 
 	// Создаем канал для передачи строк
-	lines := make(chan string, 100) // Буферизованный канал для строк
-	errChan := make(chan error, 1)  // Канал для ошибок
+	lines := make(chan []string, 100) // Передаем батчи строк
+	errChan := make(chan error, 1)    // Канал для ошибок
 
 	// Горутина для чтения строк из файла
 	go func() {
 		defer close(lines)
+		batch := []string{}
 		for scanner.Scan() {
-			lines <- scanner.Text()
+			line := scanner.Text()
+			batch = append(batch, line)
+			if len(batch) >= 100 { // Размер батча
+				lines <- batch
+				batch = []string{}
+			}
+		}
+		if len(batch) > 0 {
+			lines <- batch
 		}
 		if err := scanner.Err(); err != nil {
 			errChan <- err
@@ -78,18 +86,20 @@ func (r *CSVReader) ReadAndProcessConcurrent(filePath string, processFunc func([
 	}()
 
 	// Горутины для обработки строк
-	numWorkers := runtime.NumCPU() // Количество ядер процессора
+	numWorkers := 4 // Ограниченное количество горутин
 	var wg sync.WaitGroup
 	wg.Add(numWorkers)
 
 	for i := 0; i < numWorkers; i++ {
 		go func() {
 			defer wg.Done()
-			for line := range lines {
-				record := strings.Split(line, ",")
-				if err := processFunc(record); err != nil {
-					errChan <- err
-					return
+			for batch := range lines {
+				for _, line := range batch {
+					record := strings.Split(line, ",")
+					if err := processFunc(record); err != nil {
+						errChan <- err
+						return
+					}
 				}
 			}
 		}()
