@@ -118,3 +118,11 @@ func (r *CSVReader) ReadAndProcessConcurrent(filePath string, processFunc func([
 
 	return nil
 }
+
+func GetFileSize(filePath string) (float64, error) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return 0, err
+	}
+	return float64(fileInfo.Size()), nil
+}
