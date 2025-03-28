@@ -3,6 +3,7 @@ package domain
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"runtime"
@@ -286,6 +287,76 @@ func (gb *GraphBuilder) BuildGraphSequential(filePath string, processFunc func([
 	return nil
 }
 
+// TODO: TMP2
+func (gb *GraphBuilder) BuildGraphSequential2(filePath string, processFunc func([]string) error) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("ошибка открытия файла: %v", err)
+	}
+	defer file.Close()
+
+	// Подсчет общего количества строк в файле
+	totalLines, err := countLines(filePath)
+	if err != nil {
+		return fmt.Errorf("ошибка подсчета строк: %v", err)
+	}
+
+	scanner := bufio.NewScanner(file)
+
+	// Пропускаем заголовок
+	if scanner.Scan() {
+		header := scanner.Text()
+		log.Printf("Пропущен заголовок: %s", header)
+	}
+
+	// Счетчик обработанных строк
+	var processedLines int
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		record := strings.Split(line, ",")
+		if err := processFunc(record); err != nil {
+			return err
+		}
+
+		// Увеличиваем счетчик обработанных строк
+		processedLines++
+
+		// Вычисляем и выводим прогресс в процентах
+		progress := float64(processedLines) / float64(totalLines) * 100
+		log.Printf("Прогресс обработки файла: %.2f%%", progress)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("ошибка сканирования файла: %v", err)
+	}
+
+	gb.finalizeGraph()
+	return nil
+}
+
+// Вспомогательная функция для подсчета строк в файле
+func countLines(filePath string) (int, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+
+	for scanner.Scan() {
+		lineCount++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+
+	return lineCount, nil
+}
+
 // TODO: TMP
 func (gb *GraphBuilder) BuildGraphConcurrent(filePath string, processFunc func([]string) error) error {
 	file, err := os.Open(filePath)
@@ -358,6 +429,95 @@ func (gb *GraphBuilder) BuildGraphConcurrent(filePath string, processFunc func([
 	// Проверяем наличие ошибок
 	if err := <-errChan; err != nil {
 		return err
+	}
+
+	gb.finalizeGraph()
+	return nil
+}
+
+// TODO: TMP BIG FILES Sequential
+func (gb *GraphBuilder) BuildGraphSequentialLargeFile(filePath string, processFunc func([]string) error) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("ошибка открытия файла: %v", err)
+	}
+	defer file.Close()
+
+	// Получаем размер файла
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("ошибка получения информации о файле: %v", err)
+	}
+	totalFileSize := fileInfo.Size() // Общий размер файла в байтах
+
+	const blockSize = 1024 * 1024 // Размер блока (например, 1 МБ)
+	buffer := make([]byte, blockSize)
+
+	// Флаг для отслеживания, был ли пропущен заголовок
+	headerSkipped := false
+
+	// Буфер для хранения неполной строки из предыдущего блока
+	var carryOver string
+
+	// Текущая позиция чтения
+	var bytesRead int64
+
+	for {
+		n, err := file.Read(buffer)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("ошибка чтения файла: %v", err)
+		}
+
+		// Добавляем количество прочитанных байт
+		bytesRead += int64(n)
+
+		// Добавляем неполную строку из предыдущего блока
+		data := carryOver + string(buffer[:n])
+
+		// Разбиваем данные на строки
+		lines := strings.Split(data, "\n")
+
+		// Последняя строка может быть неполной, сохраняем её для следующего блока
+		carryOver = lines[len(lines)-1]
+		lines = lines[:len(lines)-1] // Удаляем последнюю строку из обработки
+
+		for _, line := range lines {
+			// Пропускаем пустые строки
+			if line == "" {
+				continue
+			}
+
+			// Пропуск заголовка
+			if !headerSkipped {
+				log.Printf("Пропущен заголовок: %s", line)
+				headerSkipped = true
+				continue
+			}
+
+			// Разбиваем строку на записи
+			record := strings.Split(line, ",")
+			if err := processFunc(record); err != nil {
+				return err
+			}
+
+			// Добавляем паузу после обработки строки
+			time.Sleep(1 * time.Millisecond) // Пауза 1 мс
+		}
+
+		// Вычисляем и выводим прогресс в процентах
+		progress := float64(bytesRead) / float64(totalFileSize) * 100
+		log.Printf("Прогресс обработки файла: %.2f%%", progress)
+	}
+
+	// Обработка оставшейся неполной строки
+	if carryOver != "" {
+		record := strings.Split(carryOver, ",")
+		if err := processFunc(record); err != nil {
+			return err
+		}
 	}
 
 	gb.finalizeGraph()

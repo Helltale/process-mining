@@ -11,7 +11,8 @@ import (
 )
 
 // TODO: TMP TO CONFIG
-const LargeFileSizeThreshold = 1.8 * 1024 * 1024 * 1024 // 1.8 ГБ в байтах
+const LargeFileSizeThreshold = 1.8 * 1024 * 1024 * 1024  // 1.8 ГБ в байтах
+const LargeFileSizeThreshold2 = 3.1 * 1024 * 1024 * 1024 // 3.1 ГБ в байтах
 
 type GraphService struct {
 	graphBuilder *domain.GraphBuilder
@@ -56,14 +57,35 @@ func (s *GraphService) BuildGraphFromCSV(filePath string) error {
 		return nil
 	}
 
+	if fileSize > LargeFileSizeThreshold2 {
+		numb := 18
+		runtime.GOMAXPROCS(numb)
+		slog.Info("Конкурентная обработка для больших файлов")
+		slog.Info("Ограничили CPU", "значение", numb)
+
+		return s.graphBuilder.BuildGraphSequential2(filePath, processFunc)
+	}
+
 	if fileSize > LargeFileSizeThreshold {
 
-		//TODO: вынести runtime.GOMAXPROCS(15) в конфиг
-		// Ограничиваем использование CPU до 15 ядер (или другого значения)
-		runtime.GOMAXPROCS(15)
+		//TODO: вынести runtime.GOMAXPROCS(numb) в конфиг
+		// Ограничиваем использование CPU до numb ядер (или другого значения)
+		numb := 18
+		runtime.GOMAXPROCS(numb)
 		// Конкурентная обработка для больших файлов
 		slog.Info("Конкурентная обработка для больших файлов")
-		slog.Info("Ограничили CPU", "значение", runtime.GOMAXPROCS(15))
+		slog.Info("Ограничили CPU", "значение", numb)
+
+		// TODO: вынести в конфиг обработку больших файлов
+		LargeFileMethod := true
+		if LargeFileMethod {
+			// последовательный большой файл обработка
+			slog.Info("последовательная обработка")
+			return s.graphBuilder.BuildGraphSequential(filePath, processFunc)
+		}
+
+		// конкурентная обработка, сомнительно потому что io ожидание большое получится
+		slog.Info("конкурентная обработка")
 		return s.graphBuilder.BuildGraphConcurrent(filePath, processFunc)
 	}
 
