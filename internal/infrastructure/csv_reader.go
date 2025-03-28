@@ -1,23 +1,17 @@
 package infrastructure
 
 import (
-	"encoding/csv"
-	"fmt"
-	"io"
+	"bufio"
 	"log"
 	"os"
-	"path/filepath"
+	"strings"
+	"sync"
 )
 
 type CSVReader struct{}
-type TMPCleaner struct{}
 
 func NewCSVReader() *CSVReader {
 	return &CSVReader{}
-}
-
-func NewTMPCleaner() *TMPCleaner {
-	return &TMPCleaner{}
 }
 
 func (r *CSVReader) ReadAndProcess(filePath string, processFunc func([]string) error) error {
@@ -27,48 +21,108 @@ func (r *CSVReader) ReadAndProcess(filePath string, processFunc func([]string) e
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
-	_, err = reader.Read() // without file header
-	if err != nil && err != io.EOF {
-		return err
+	scanner := bufio.NewScanner(file)
+
+	// Пропускаем заголовок
+	if scanner.Scan() {
+		header := scanner.Text()
+		log.Printf("Пропущен заголовок: %s", header)
 	}
 
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
+	// Обрабатываем остальные строки
+	for scanner.Scan() {
+		line := scanner.Text()
+		record := strings.Split(line, ",") // Разделяем строку на поля
 		if err := processFunc(record); err != nil {
 			return err
 		}
 	}
 
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (c *TMPCleaner) ClearTempFiles() error {
-	// Указываем путь к директории /tmp
-	dir := "/tmp"
-
-	// Читаем содержимое директории
-	files, err := os.ReadDir(dir)
+// работает даже дольше
+func (r *CSVReader) ReadAndProcessConcurrent(filePath string, processFunc func([]string) error) error {
+	file, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("ошибка чтения директории %s: %v", dir, err)
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	// Пропускаем заголовок
+	if scanner.Scan() {
+		header := scanner.Text()
+		log.Printf("Пропущен заголовок: %s", header)
 	}
 
-	// Удаляем все файлы в директории
-	for _, file := range files {
-		filePath := filepath.Join(dir, file.Name())
-		if err := os.Remove(filePath); err != nil {
-			log.Printf("Ошибка удаления файла %s: %v", filePath, err)
-		} else {
-			log.Printf("Файл удален: %s", filePath)
+	// Создаем канал для передачи строк
+	lines := make(chan []string, 100) // Передаем батчи строк
+	errChan := make(chan error, 1)    // Канал для ошибок
+
+	// Горутина для чтения строк из файла
+	go func() {
+		defer close(lines)
+		batch := []string{}
+		for scanner.Scan() {
+			line := scanner.Text()
+			batch = append(batch, line)
+			if len(batch) >= 100 { // Размер батча
+				lines <- batch
+				batch = []string{}
+			}
 		}
+		if len(batch) > 0 {
+			lines <- batch
+		}
+		if err := scanner.Err(); err != nil {
+			errChan <- err
+		}
+	}()
+
+	// Горутины для обработки строк
+	numWorkers := 4 // Ограниченное количество горутин
+	var wg sync.WaitGroup
+	wg.Add(numWorkers)
+
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			defer wg.Done()
+			for batch := range lines {
+				for _, line := range batch {
+					record := strings.Split(line, ",")
+					if err := processFunc(record); err != nil {
+						errChan <- err
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	// Ожидаем завершения всех горутин
+	go func() {
+		wg.Wait()
+		close(errChan)
+	}()
+
+	// Проверяем наличие ошибок
+	if err := <-errChan; err != nil {
+		return err
 	}
 
 	return nil
+}
+
+func GetFileSize(filePath string) (float64, error) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return 0, err
+	}
+	return float64(fileInfo.Size()), nil
 }

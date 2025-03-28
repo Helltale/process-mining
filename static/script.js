@@ -1,8 +1,23 @@
 let vizInstance; // Глобальная переменная для хранения экземпляра Viz.js
 let graphData; // Глобальная переменная для хранения данных графа
+let currentMode = 'events';
+let isUploading = false; // Флаг для предотвращения повторной загрузки
+const worker = new Worker('worker.js'); // Инициализация Web Worker
+
+// Обработчик сообщений от Web Worker
+worker.onmessage = (event) => {
+  graphData = event.data; // Сохраняем обработанные данные
+  renderGraph(); // Перерисовываем граф
+};
 
 // Функция для отправки файла на сервер
 async function uploadFile(file) {
+  if (isUploading) {
+    alert('Файл уже загружается. Пожалуйста, подождите.');
+    return;
+  }
+  isUploading = true;
+
   const formData = new FormData();
   formData.append('file', file);
 
@@ -16,17 +31,28 @@ async function uploadFile(file) {
       throw new Error('Ошибка загрузки файла');
     }
 
-    // Получаем данные графа с сервера
+    alert('Файл успешно загружен!');
+    document.getElementById('download-btn').disabled = false;
+
+    // Загружаем данные графа с сервера
     const graphResponse = await fetch('/graph');
     if (!graphResponse.ok) {
       throw new Error('Не удалось получить данные графа.');
     }
 
-    graphData = await graphResponse.json(); // Сохраняем данные графа
-    renderGraph(); // Рисуем граф после загрузки данных
+    const rawData = await graphResponse.json();
+    if (!rawData.nodes || !rawData.edges) {
+      console.error("Некорректные данные графа:", rawData);
+      alert("Ошибка загрузки данных графа.");
+      return;
+    }
+    worker.postMessage(rawData); // Передаем данные в Web Worker
+        
   } catch (error) {
     console.error('Ошибка:', error);
     alert(error.message || 'Не удалось загрузить файл или построить граф.');
+  } finally {
+    isUploading = false;
   }
 }
 
