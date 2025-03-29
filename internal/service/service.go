@@ -2,11 +2,9 @@ package service
 
 import (
 	"fmt"
-	"runtime"
 	"time"
 
 	"github.com/Helltale/process-mining/internal/domain"
-	"github.com/Helltale/process-mining/internal/infrastructure"
 )
 
 // TODO: TMP TO CONFIG
@@ -30,44 +28,25 @@ func (s *GraphService) ClearGraph() {
 }
 
 func (s *GraphService) BuildGraphFromCSV(filePath string) error {
-	// очищаем старый граф
 	s.graphBuilder.ClearGraph()
-
-	fileSize, err := infrastructure.GetFileSize(filePath)
-	if err != nil {
-		return fmt.Errorf("ошибка получения размера файла: %v", err)
-	}
 
 	processFunc := func(record []string) error {
 		if len(record) != 3 {
 			return fmt.Errorf("некорректная строка: %v", record)
 		}
-
 		timestamp, err := time.Parse(time.RFC3339, record[1])
 		if err != nil {
 			return fmt.Errorf("ошибка парсинга времени '%s': %v", record[1], err)
 		}
-
 		event := &domain.Event{
 			ID:        record[0],
 			SessionID: record[0],
 			Timestamp: timestamp,
 			Desc:      record[2],
 		}
-
 		s.graphBuilder.ProcessEvent(event)
 		return nil
 	}
 
-	// обработка по размеру файла
-	if fileSize > LargeFileSizeThreshold2 {
-		runtime.GOMAXPROCS(8)
-		return s.graphBuilder.BuildGraphSequential2(filePath, processFunc)
-	}
-	if fileSize > LargeFileSizeThreshold {
-		runtime.GOMAXPROCS(6)
-		return s.graphBuilder.BuildGraphSequential(filePath, processFunc)
-	}
-
-	return s.graphBuilder.BuildGraphSequential(filePath, processFunc)
+	return s.graphBuilder.BuildGraphSequentialLargeFile(filePath, processFunc)
 }
