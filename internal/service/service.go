@@ -2,7 +2,6 @@ package service
 
 import (
 	"fmt"
-	"log/slog"
 	"runtime"
 	"time"
 
@@ -31,6 +30,9 @@ func (s *GraphService) ClearGraph() {
 }
 
 func (s *GraphService) BuildGraphFromCSV(filePath string) error {
+	// очищаем старый граф
+	s.graphBuilder.ClearGraph()
+
 	fileSize, err := infrastructure.GetFileSize(filePath)
 	if err != nil {
 		return fmt.Errorf("ошибка получения размера файла: %v", err)
@@ -57,18 +59,15 @@ func (s *GraphService) BuildGraphFromCSV(filePath string) error {
 		return nil
 	}
 
+	// обработка по размеру файла
 	if fileSize > LargeFileSizeThreshold2 {
 		runtime.GOMAXPROCS(8)
-		slog.Info("BuildGraphSequential2: для очень большого файла")
 		return s.graphBuilder.BuildGraphSequential2(filePath, processFunc)
 	}
-
 	if fileSize > LargeFileSizeThreshold {
 		runtime.GOMAXPROCS(6)
-		slog.Info("BuildGraphSequential: для большого файла")
 		return s.graphBuilder.BuildGraphSequential(filePath, processFunc)
 	}
 
-	slog.Info("BuildGraphSequential: для обычного файла")
 	return s.graphBuilder.BuildGraphSequential(filePath, processFunc)
 }

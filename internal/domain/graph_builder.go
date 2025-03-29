@@ -48,20 +48,24 @@ type Session struct {
 }
 
 type GraphBuilder struct {
-	graph      *Graph
-	nodeMap    map[string]*Node
-	edgeMap    map[string]*Edge
-	sessionMap sync.Map
-	csvReader  *infrastructure.CSVReader
+	graph         *Graph
+	nodeMap       map[string]*Node
+	edgeMap       map[string]*Edge
+	csvReader     *infrastructure.CSVReader
+	lastEvent     *Event
+	lastSessionID string
+	isFirstEvent  bool
+
+	totalRecords int
 }
 
 func NewGraphBuilder(csvReader *infrastructure.CSVReader) *GraphBuilder {
 	return &GraphBuilder{
-		graph:      &Graph{},
-		nodeMap:    make(map[string]*Node),
-		edgeMap:    make(map[string]*Edge),
-		sessionMap: sync.Map{},
-		csvReader:  csvReader,
+		graph:        &Graph{},
+		nodeMap:      make(map[string]*Node),
+		edgeMap:      make(map[string]*Edge),
+		csvReader:    csvReader,
+		isFirstEvent: true,
 	}
 }
 
@@ -107,98 +111,89 @@ func (gb *GraphBuilder) ClearGraph() {
 	gb.graph = &Graph{}
 	gb.nodeMap = make(map[string]*Node)
 	gb.edgeMap = make(map[string]*Edge)
-	gb.sessionMap = sync.Map{}
 }
 
 func (gb *GraphBuilder) ProcessEvent(event *Event) {
-	// Проверяем, существует ли сессия
-	if _, ok := gb.sessionMap.Load(event.SessionID); !ok {
-		gb.sessionMap.Store(event.SessionID, &Session{})
+	node := gb.getNode(event.Desc)
+	node.Count++
+	node.Total++
+
+	if gb.isFirstEvent {
+		gb.lastSessionID = event.SessionID
+		gb.lastEvent = event
+		gb.isFirstEvent = false
+
+		// Добавляем связь от "start"
+		gb.addStartEdge(event)
+		return
 	}
 
-	// Получаем сессию
-	session, _ := gb.sessionMap.Load(event.SessionID)
-	session.(*Session).Events = append(session.(*Session).Events, event)
+	// Новая сессия?
+	if event.SessionID != gb.lastSessionID {
+		// Завершаем старую сессию → "end"
+		gb.addEndEdge(gb.lastEvent)
+
+		// новая сессия → связь от "start"
+		gb.addStartEdge(event)
+	}
+
+	// связь между событиями
+	if gb.lastSessionID == event.SessionID {
+		duration := event.Timestamp.Sub(gb.lastEvent.Timestamp).Seconds()
+		key := gb.lastEvent.Desc + "_" + event.Desc
+		edge := gb.getEdge(key, gb.lastEvent.Desc, event.Desc)
+		edge.Count++
+		edge.AvgDuration = (edge.AvgDuration*float64(edge.Count-1) + duration) / float64(edge.Count)
+	}
+
+	gb.lastEvent = event
+	gb.lastSessionID = event.SessionID
+}
+
+func (gb *GraphBuilder) addStartEdge(event *Event) {
+	startKey := "start_" + event.Desc
+	edge := gb.getEdge(startKey, "start", event.Desc)
+	edge.Count++
+	edge.Style = "dashed"
+}
+
+func (gb *GraphBuilder) addEndEdge(event *Event) {
+	endKey := event.Desc + "_end"
+	edge := gb.getEdge(endKey, event.Desc, "end")
+	edge.Count++
+	edge.Style = "dashed"
 }
 
 func (gb *GraphBuilder) finalizeGraph() {
-	// Перебираем все сессии
-	gb.sessionMap.Range(func(key, value interface{}) bool {
-		session := value.(*Session)
-		gb.processSession(session)
-		return true // Продолжаем перебор
-	})
-
-	// Добавляем узлы
-	for _, node := range gb.nodeMap {
-		gb.graph.Nodes = append(gb.graph.Nodes, node)
-	}
-
-	// Добавляем ребра
-	for _, edge := range gb.edgeMap {
-		edge.Label = fmt.Sprintf("%d\n%.2f sec avg", edge.Count, edge.AvgDuration)
-		gb.graph.Edges = append(gb.graph.Edges, edge)
-	}
-
-	// Добавляем специальные узлы "Начало" и "Конец"
+	// Добавим специальные узлы
 	startNode := &Node{
 		ID:    "start",
 		Label: "Начало процесса",
-		Count: gb.getSessionCount(),
-		Total: gb.getSessionCount(),
+		Count: gb.totalRecords,
+		Total: gb.totalRecords,
 		Color: "green",
 	}
 	gb.graph.Nodes = append(gb.graph.Nodes, startNode)
 
 	endNode := &Node{
 		ID:    "end",
-		Label: "Конец",
-		Count: gb.getSessionCount(),
-		Total: gb.getSessionCount(),
+		Label: "Конец процесса",
+		Count: gb.totalRecords,
+		Total: gb.totalRecords,
 		Color: "red",
 	}
 	gb.graph.Nodes = append(gb.graph.Nodes, endNode)
 
-	// Добавляем связи между "Начало" -> первый узел и последний узел -> "Конец"
-	gb.sessionMap.Range(func(key, value interface{}) bool {
-		session := value.(*Session)
-		events := session.Events
-		if len(events) == 0 {
-			return true
-		}
+	// обычные узлы
+	for _, node := range gb.nodeMap {
+		gb.graph.Nodes = append(gb.graph.Nodes, node)
+	}
 
-		// Связь "Начало" -> первый узел
-		firstEvent := events[0]
-		startKey := "start_" + firstEvent.Desc
-		startEdge := gb.getEdge(startKey, "start", firstEvent.Desc)
-		startEdge.Count++
-		startEdge.Style = "dashed"
-		if startEdge.Count == 1 {
-			gb.graph.Edges = append(gb.graph.Edges, startEdge)
-		}
-
-		// Связь последний узел -> "Конец"
-		lastEvent := events[len(events)-1]
-		endKey := lastEvent.Desc + "_end"
-		endEdge := gb.getEdge(endKey, lastEvent.Desc, "end")
-		endEdge.Count++
-		endEdge.Style = "dashed"
-		if endEdge.Count == 1 {
-			gb.graph.Edges = append(gb.graph.Edges, endEdge)
-		}
-
-		return true
-	})
-}
-
-// Метод для подсчета количества сессий
-func (gb *GraphBuilder) getSessionCount() int {
-	count := 0
-	gb.sessionMap.Range(func(key, value interface{}) bool {
-		count++
-		return true
-	})
-	return count
+	// ребра
+	for _, edge := range gb.edgeMap {
+		edge.Label = fmt.Sprintf("%d\n%.2f sec avg", edge.Count, edge.AvgDuration)
+		gb.graph.Edges = append(gb.graph.Edges, edge)
+	}
 }
 
 func (gb *GraphBuilder) processSession(session *Session) {
@@ -267,6 +262,7 @@ func (gb *GraphBuilder) BuildGraphSequential(filePath string, processFunc func([
 	if err != nil {
 		return err
 	}
+	gb.totalRecords = totalLines
 
 	scanner := bufio.NewScanner(file)
 	if scanner.Scan() {
@@ -307,6 +303,7 @@ func (gb *GraphBuilder) BuildGraphSequential2(filePath string, processFunc func(
 	if err != nil {
 		return err
 	}
+	gb.totalRecords = totalLines
 
 	scanner := bufio.NewScanner(file)
 
@@ -370,6 +367,7 @@ func (gb *GraphBuilder) BuildGraphConcurrent(filePath string, processFunc func([
 	if err != nil {
 		return err
 	}
+	gb.totalRecords = totalLines
 
 	scanner := bufio.NewScanner(file)
 	if scanner.Scan() {
@@ -377,8 +375,10 @@ func (gb *GraphBuilder) BuildGraphConcurrent(filePath string, processFunc func([
 		log.Printf("Пропущен заголовок: %s", header)
 	}
 
-	lines := make(chan []string, 1000)
+	lines := make(chan []string, 100)
 	errChan := make(chan error, 1)
+	progress := NewProgressLogger(totalLines, "BuildGraphConcurrent", true)
+	defer progress.Done()
 
 	go func() {
 		defer close(lines)
@@ -399,12 +399,9 @@ func (gb *GraphBuilder) BuildGraphConcurrent(filePath string, processFunc func([
 		}
 	}()
 
-	numWorkers := 10
+	numWorkers := 4
 	var wg sync.WaitGroup
 	wg.Add(numWorkers)
-
-	progress := NewProgressLogger(totalLines, "BuildGraphConcurrent", true)
-	defer progress.Done()
 
 	for i := 0; i < numWorkers; i++ {
 		go func() {
@@ -437,26 +434,33 @@ func (gb *GraphBuilder) BuildGraphConcurrent(filePath string, processFunc func([
 
 // TODO: TMP BIG FILES Sequential
 func (gb *GraphBuilder) BuildGraphSequentialLargeFile(filePath string, processFunc func([]string) error) error {
+	gb.ClearGraph() // ✅ очищаем граф перед новой загрузкой
+
 	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("ошибка открытия файла: %v", err)
 	}
 	defer file.Close()
 
-	fileInfo, err := file.Stat()
+	totalLines, err := countLines(filePath)
 	if err != nil {
-		return fmt.Errorf("ошибка получения информации о файле: %v", err)
+		return fmt.Errorf("ошибка подсчета строк: %v", err)
 	}
-	totalSize := fileInfo.Size()
+	gb.totalRecords = totalLines
+
+	// fileInfo, err := file.Stat()
+	// if err != nil {
+	// 	return fmt.Errorf("ошибка получения информации о файле: %v", err)
+	// }
+	// totalSize := fileInfo.Size()
 
 	const blockSize = 1024 * 1024
 	buffer := make([]byte, blockSize)
 
 	var carryOver string
 	var bytesRead int64
-	var processedLines int
 
-	progress := NewProgressLogger(0, "BuildGraphSequentialLargeFile", true)
+	progress := NewProgressLogger(totalLines, "BuildGraphSequentialLargeFile", true)
 	defer progress.Done()
 
 	headerSkipped := false
@@ -474,6 +478,11 @@ func (gb *GraphBuilder) BuildGraphSequentialLargeFile(filePath string, processFu
 		data := carryOver + string(buffer[:n])
 		lines := strings.Split(data, "\n")
 
+		if len(lines) == 0 {
+			continue
+		}
+
+		// Последняя строка, возможно, обрезана
 		carryOver = lines[len(lines)-1]
 		lines = lines[:len(lines)-1]
 
@@ -481,30 +490,33 @@ func (gb *GraphBuilder) BuildGraphSequentialLargeFile(filePath string, processFu
 			if line == "" {
 				continue
 			}
+
 			if !headerSkipped {
 				log.Printf("Пропущен заголовок: %s", line)
 				headerSkipped = true
 				continue
 			}
+
 			record := strings.Split(line, ",")
 			if err := processFunc(record); err != nil {
 				return err
 			}
-			processedLines++
-			progress.Inc()
-			time.Sleep(1 * time.Millisecond)
-		}
 
-		percent := float64(bytesRead) / float64(totalSize) * 100
-		log.Printf("Прогресс: %.2f%%", percent)
+			progress.Inc()
+		}
 	}
 
+	// Обрабатываем оставшуюся строку
 	if carryOver != "" {
-		record := strings.Split(carryOver, ",")
-		if err := processFunc(record); err != nil {
-			return err
+		if !headerSkipped {
+			log.Printf("Пропущен заголовок: %s", carryOver)
+		} else {
+			record := strings.Split(carryOver, ",")
+			if err := processFunc(record); err != nil {
+				return err
+			}
+			progress.Inc()
 		}
-		progress.Inc()
 	}
 
 	gb.finalizeGraph()

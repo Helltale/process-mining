@@ -30,7 +30,7 @@ func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ограничение размера тела запроса до 3 ГБ
-	r.Body = http.MaxBytesReader(w, r.Body, 3*1024*1024*1024)
+	r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024*1024)
 
 	file, _, err := r.FormFile("file")
 	if err != nil {
