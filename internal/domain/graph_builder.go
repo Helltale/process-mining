@@ -263,13 +263,19 @@ func (gb *GraphBuilder) BuildGraphSequential(filePath string, processFunc func([
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
+	totalLines, err := countLines(filePath)
+	if err != nil {
+		return err
+	}
 
-	// Пропускаем заголовок
+	scanner := bufio.NewScanner(file)
 	if scanner.Scan() {
 		header := scanner.Text()
 		log.Printf("Пропущен заголовок: %s", header)
 	}
+
+	progress := NewProgressLogger(totalLines, "BuildGraphSequential", true)
+	defer progress.Done()
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -277,6 +283,7 @@ func (gb *GraphBuilder) BuildGraphSequential(filePath string, processFunc func([
 		if err := processFunc(record); err != nil {
 			return err
 		}
+		progress.Inc()
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -291,14 +298,14 @@ func (gb *GraphBuilder) BuildGraphSequential(filePath string, processFunc func([
 func (gb *GraphBuilder) BuildGraphSequential2(filePath string, processFunc func([]string) error) error {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("ошибка открытия файла: %v", err)
+		return err
 	}
 	defer file.Close()
 
 	// Подсчет общего количества строк в файле
 	totalLines, err := countLines(filePath)
 	if err != nil {
-		return fmt.Errorf("ошибка подсчета строк: %v", err)
+		return err
 	}
 
 	scanner := bufio.NewScanner(file)
@@ -309,8 +316,8 @@ func (gb *GraphBuilder) BuildGraphSequential2(filePath string, processFunc func(
 		log.Printf("Пропущен заголовок: %s", header)
 	}
 
-	// Счетчик обработанных строк
-	var processedLines int
+	progress := NewProgressLogger(totalLines, "BuildGraphSequential2", true)
+	defer progress.Done()
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -318,17 +325,11 @@ func (gb *GraphBuilder) BuildGraphSequential2(filePath string, processFunc func(
 		if err := processFunc(record); err != nil {
 			return err
 		}
-
-		// Увеличиваем счетчик обработанных строк
-		processedLines++
-
-		// Вычисляем и выводим прогресс в процентах
-		progress := float64(processedLines) / float64(totalLines) * 100
-		log.Printf("Прогресс обработки файла: %.2f%%", progress)
+		progress.Inc()
 	}
 
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("ошибка сканирования файла: %v", err)
+		return err
 	}
 
 	gb.finalizeGraph()
@@ -365,26 +366,27 @@ func (gb *GraphBuilder) BuildGraphConcurrent(filePath string, processFunc func([
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
+	totalLines, err := countLines(filePath)
+	if err != nil {
+		return err
+	}
 
-	// Пропускаем заголовок
+	scanner := bufio.NewScanner(file)
 	if scanner.Scan() {
 		header := scanner.Text()
 		log.Printf("Пропущен заголовок: %s", header)
 	}
 
-	// Создаем канал для передачи строк
-	lines := make(chan []string, 1000) // Увеличенный буфер
-	errChan := make(chan error, 1)     // Канал для ошибок
+	lines := make(chan []string, 1000)
+	errChan := make(chan error, 1)
 
-	// Горутина для чтения строк из файла
 	go func() {
 		defer close(lines)
 		batch := []string{}
 		for scanner.Scan() {
 			line := scanner.Text()
 			batch = append(batch, line)
-			if len(batch) >= 100 { // Размер батча
+			if len(batch) >= 100 {
 				lines <- batch
 				batch = []string{}
 			}
@@ -397,11 +399,12 @@ func (gb *GraphBuilder) BuildGraphConcurrent(filePath string, processFunc func([
 		}
 	}()
 
-	// Горутины для обработки строк
-	//TODO: протестировать больше воркеров
-	numWorkers := 20 // Ограниченное количество горутин
+	numWorkers := 10
 	var wg sync.WaitGroup
 	wg.Add(numWorkers)
+
+	progress := NewProgressLogger(totalLines, "BuildGraphConcurrent", true)
+	defer progress.Done()
 
 	for i := 0; i < numWorkers; i++ {
 		go func() {
@@ -413,20 +416,17 @@ func (gb *GraphBuilder) BuildGraphConcurrent(filePath string, processFunc func([
 						errChan <- err
 						return
 					}
+					progress.Inc()
 				}
-				// Добавляем паузу после обработки батча
-				time.Sleep(1 * time.Millisecond) // Пауза 1 мс
 			}
 		}()
 	}
 
-	// Ожидаем завершения всех горутин
 	go func() {
 		wg.Wait()
 		close(errChan)
 	}()
 
-	// Проверяем наличие ошибок
 	if err := <-errChan; err != nil {
 		return err
 	}
@@ -443,24 +443,23 @@ func (gb *GraphBuilder) BuildGraphSequentialLargeFile(filePath string, processFu
 	}
 	defer file.Close()
 
-	// Получаем размер файла
 	fileInfo, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("ошибка получения информации о файле: %v", err)
 	}
-	totalFileSize := fileInfo.Size() // Общий размер файла в байтах
+	totalSize := fileInfo.Size()
 
-	const blockSize = 1024 * 1024 // Размер блока (например, 1 МБ)
+	const blockSize = 1024 * 1024
 	buffer := make([]byte, blockSize)
 
-	// Флаг для отслеживания, был ли пропущен заголовок
-	headerSkipped := false
-
-	// Буфер для хранения неполной строки из предыдущего блока
 	var carryOver string
-
-	// Текущая позиция чтения
 	var bytesRead int64
+	var processedLines int
+
+	progress := NewProgressLogger(0, "BuildGraphSequentialLargeFile", true)
+	defer progress.Done()
+
+	headerSkipped := false
 
 	for {
 		n, err := file.Read(buffer)
@@ -471,53 +470,41 @@ func (gb *GraphBuilder) BuildGraphSequentialLargeFile(filePath string, processFu
 			return fmt.Errorf("ошибка чтения файла: %v", err)
 		}
 
-		// Добавляем количество прочитанных байт
 		bytesRead += int64(n)
-
-		// Добавляем неполную строку из предыдущего блока
 		data := carryOver + string(buffer[:n])
-
-		// Разбиваем данные на строки
 		lines := strings.Split(data, "\n")
 
-		// Последняя строка может быть неполной, сохраняем её для следующего блока
 		carryOver = lines[len(lines)-1]
-		lines = lines[:len(lines)-1] // Удаляем последнюю строку из обработки
+		lines = lines[:len(lines)-1]
 
 		for _, line := range lines {
-			// Пропускаем пустые строки
 			if line == "" {
 				continue
 			}
-
-			// Пропуск заголовка
 			if !headerSkipped {
 				log.Printf("Пропущен заголовок: %s", line)
 				headerSkipped = true
 				continue
 			}
-
-			// Разбиваем строку на записи
 			record := strings.Split(line, ",")
 			if err := processFunc(record); err != nil {
 				return err
 			}
-
-			// Добавляем паузу после обработки строки
-			time.Sleep(1 * time.Millisecond) // Пауза 1 мс
+			processedLines++
+			progress.Inc()
+			time.Sleep(1 * time.Millisecond)
 		}
 
-		// Вычисляем и выводим прогресс в процентах
-		progress := float64(bytesRead) / float64(totalFileSize) * 100
-		log.Printf("Прогресс обработки файла: %.2f%%", progress)
+		percent := float64(bytesRead) / float64(totalSize) * 100
+		log.Printf("Прогресс: %.2f%%", percent)
 	}
 
-	// Обработка оставшейся неполной строки
 	if carryOver != "" {
 		record := strings.Split(carryOver, ",")
 		if err := processFunc(record); err != nil {
 			return err
 		}
+		progress.Inc()
 	}
 
 	gb.finalizeGraph()

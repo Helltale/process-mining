@@ -53,43 +53,22 @@ func (s *GraphService) BuildGraphFromCSV(filePath string) error {
 			Desc:      record[2],
 		}
 
-		s.graphBuilder.ProcessEvent(event) // Вызываем экспортированный метод
+		s.graphBuilder.ProcessEvent(event)
 		return nil
 	}
 
 	if fileSize > LargeFileSizeThreshold2 {
-		numb := 18
-		runtime.GOMAXPROCS(numb)
-		slog.Info("Конкурентная обработка для больших файлов")
-		slog.Info("Ограничили CPU", "значение", numb)
-
+		runtime.GOMAXPROCS(8)
+		slog.Info("BuildGraphSequential2: для очень большого файла")
 		return s.graphBuilder.BuildGraphSequential2(filePath, processFunc)
 	}
 
 	if fileSize > LargeFileSizeThreshold {
-
-		//TODO: вынести runtime.GOMAXPROCS(numb) в конфиг
-		// Ограничиваем использование CPU до numb ядер (или другого значения)
-		numb := 18
-		runtime.GOMAXPROCS(numb)
-		// Конкурентная обработка для больших файлов
-		slog.Info("Конкурентная обработка для больших файлов")
-		slog.Info("Ограничили CPU", "значение", numb)
-
-		// TODO: вынести в конфиг обработку больших файлов
-		LargeFileMethod := true
-		if LargeFileMethod {
-			// последовательный большой файл обработка
-			slog.Info("последовательная обработка")
-			return s.graphBuilder.BuildGraphSequential(filePath, processFunc)
-		}
-
-		// конкурентная обработка, сомнительно потому что io ожидание большое получится
-		slog.Info("конкурентная обработка")
-		return s.graphBuilder.BuildGraphConcurrent(filePath, processFunc)
+		runtime.GOMAXPROCS(6)
+		slog.Info("BuildGraphSequential: для большого файла")
+		return s.graphBuilder.BuildGraphSequential(filePath, processFunc)
 	}
 
-	// Обычная обработка для маленьких файлов
-	slog.Info("Обычная обработка для маленьких файлов")
+	slog.Info("BuildGraphSequential: для обычного файла")
 	return s.graphBuilder.BuildGraphSequential(filePath, processFunc)
 }

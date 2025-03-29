@@ -29,7 +29,9 @@ func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, 6*1024*1024*1024) // Лимит 6 ГБ // TODO ВЫНЕСТИ В CONFIG
+	// Ограничение размера тела запроса до 3 ГБ
+	r.Body = http.MaxBytesReader(w, r.Body, 3*1024*1024*1024)
+
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		log.Printf("Ошибка получения файла: %v", err)
@@ -38,9 +40,8 @@ func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Создаем временный файл
 	tmpManager := infrastructure.NewTMPFileManager()
-	tmpManager.DeleteTempFile() // Удаляем файл после использования
+	tmpManager.DeleteTempFile()
 
 	tempFile, err := tmpManager.CreateTempFile("uploaded-", "csv")
 	if err != nil {
@@ -48,8 +49,11 @@ func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Ошибка создания временного файла", http.StatusInternalServerError)
 		return
 	}
+	defer tempFile.Close()
 
-	buf := make([]byte, 1024*1024) // Буфер размером 1 МБ // TODO ВЫНЕСТИ В CONFIG
+	// Буферизированное копирование файла
+	buf := make([]byte, 1024*1024)
+	var totalBytes int64
 	for {
 		n, err := file.Read(buf)
 		if n > 0 {
@@ -58,6 +62,7 @@ func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Ошибка записи во временный файл", http.StatusInternalServerError)
 				return
 			}
+			totalBytes += int64(n)
 		}
 		if err == io.EOF {
 			break
@@ -69,7 +74,10 @@ func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Println("Файл успешно загружен. Начинается обработка...")
+	log.Printf("Файл успешно загружен. Размер: %.2f МБ", float64(totalBytes)/1024/1024)
+	log.Printf("Путь к файлу: %s", tempFile.Name())
+
+	// Построение графа
 	err = h.graphService.BuildGraphFromCSV(tempFile.Name())
 	if err != nil {
 		log.Printf("Ошибка построения графа: %v", err)
