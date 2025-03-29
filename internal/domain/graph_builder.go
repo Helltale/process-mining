@@ -6,9 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
-	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Helltale/process-mining/internal/infrastructure"
@@ -150,6 +148,97 @@ func (gb *GraphBuilder) ProcessEvent(event *Event) {
 	gb.lastSessionID = event.SessionID
 }
 
+// TODO: TMP BIG FILES Sequential
+func (gb *GraphBuilder) BuildGraphSequentialLargeFile(filePath string, processFunc func([]string) error) error {
+	gb.ClearGraph()
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("ошибка открытия файла: %v", err)
+	}
+	defer file.Close()
+
+	totalLines, err := countLines(filePath)
+	if err != nil {
+		return fmt.Errorf("ошибка подсчета строк: %v", err)
+	}
+	gb.totalRecords = totalLines
+
+	// fileInfo, err := file.Stat()
+	// if err != nil {
+	// 	return fmt.Errorf("ошибка получения информации о файле: %v", err)
+	// }
+	// totalSize := fileInfo.Size()
+
+	const blockSize = 1024 * 1024
+	buffer := make([]byte, blockSize)
+
+	var carryOver string
+	var bytesRead int64
+
+	progress := NewProgressLogger(totalLines, "BuildGraphSequentialLargeFile", true)
+	defer progress.Done()
+
+	headerSkipped := false
+
+	for {
+		n, err := file.Read(buffer)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("ошибка чтения файла: %v", err)
+		}
+
+		bytesRead += int64(n)
+		data := carryOver + string(buffer[:n])
+		lines := strings.Split(data, "\n")
+
+		if len(lines) == 0 {
+			continue
+		}
+
+		// Последняя строка, возможно, обрезана
+		carryOver = lines[len(lines)-1]
+		lines = lines[:len(lines)-1]
+
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+
+			if !headerSkipped {
+				log.Printf("Пропущен заголовок: %s", line)
+				headerSkipped = true
+				continue
+			}
+
+			record := strings.Split(line, ",")
+			if err := processFunc(record); err != nil {
+				return err
+			}
+
+			progress.Inc()
+		}
+	}
+
+	// Обрабатываем оставшуюся строку
+	if carryOver != "" {
+		if !headerSkipped {
+			log.Printf("Пропущен заголовок: %s", carryOver)
+		} else {
+			record := strings.Split(carryOver, ",")
+			if err := processFunc(record); err != nil {
+				return err
+			}
+			progress.Inc()
+		}
+	}
+
+	gb.finalizeGraph()
+	return nil
+}
+
 func (gb *GraphBuilder) addStartEdge(event *Event) {
 	startKey := "start_" + event.Desc
 	edge := gb.getEdge(startKey, "start", event.Desc)
@@ -250,89 +339,6 @@ func (gb *GraphBuilder) getEdge(key, from, to string) *Edge {
 	return edge
 }
 
-// TODO: TMP
-func (gb *GraphBuilder) BuildGraphSequential(filePath string, processFunc func([]string) error) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	totalLines, err := countLines(filePath)
-	if err != nil {
-		return err
-	}
-	gb.totalRecords = totalLines
-
-	scanner := bufio.NewScanner(file)
-	if scanner.Scan() {
-		header := scanner.Text()
-		log.Printf("Пропущен заголовок: %s", header)
-	}
-
-	progress := NewProgressLogger(totalLines, "BuildGraphSequential", true)
-	defer progress.Done()
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		record := strings.Split(line, ",")
-		if err := processFunc(record); err != nil {
-			return err
-		}
-		progress.Inc()
-	}
-
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-
-	gb.finalizeGraph()
-	return nil
-}
-
-// TODO: TMP2
-func (gb *GraphBuilder) BuildGraphSequential2(filePath string, processFunc func([]string) error) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	// Подсчет общего количества строк в файле
-	totalLines, err := countLines(filePath)
-	if err != nil {
-		return err
-	}
-	gb.totalRecords = totalLines
-
-	scanner := bufio.NewScanner(file)
-
-	// Пропускаем заголовок
-	if scanner.Scan() {
-		header := scanner.Text()
-		log.Printf("Пропущен заголовок: %s", header)
-	}
-
-	progress := NewProgressLogger(totalLines, "BuildGraphSequential2", true)
-	defer progress.Done()
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		record := strings.Split(line, ",")
-		if err := processFunc(record); err != nil {
-			return err
-		}
-		progress.Inc()
-	}
-
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-
-	gb.finalizeGraph()
-	return nil
-}
-
 // Вспомогательная функция для подсчета строк в файле
 func countLines(filePath string) (int, error) {
 	file, err := os.Open(filePath)
@@ -353,222 +359,6 @@ func countLines(filePath string) (int, error) {
 	}
 
 	return lineCount, nil
-}
-
-// TODO: TMP
-func (gb *GraphBuilder) BuildGraphConcurrent(filePath string, processFunc func([]string) error) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	totalLines, err := countLines(filePath)
-	if err != nil {
-		return err
-	}
-	gb.totalRecords = totalLines
-
-	scanner := bufio.NewScanner(file)
-	if scanner.Scan() {
-		header := scanner.Text()
-		log.Printf("Пропущен заголовок: %s", header)
-	}
-
-	lines := make(chan []string, 100)
-	errChan := make(chan error, 1)
-	progress := NewProgressLogger(totalLines, "BuildGraphConcurrent", true)
-	defer progress.Done()
-
-	go func() {
-		defer close(lines)
-		batch := []string{}
-		for scanner.Scan() {
-			line := scanner.Text()
-			batch = append(batch, line)
-			if len(batch) >= 100 {
-				lines <- batch
-				batch = []string{}
-			}
-		}
-		if len(batch) > 0 {
-			lines <- batch
-		}
-		if err := scanner.Err(); err != nil {
-			errChan <- err
-		}
-	}()
-
-	numWorkers := 4
-	var wg sync.WaitGroup
-	wg.Add(numWorkers)
-
-	for i := 0; i < numWorkers; i++ {
-		go func() {
-			defer wg.Done()
-			for batch := range lines {
-				for _, line := range batch {
-					record := strings.Split(line, ",")
-					if err := processFunc(record); err != nil {
-						errChan <- err
-						return
-					}
-					progress.Inc()
-				}
-			}
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(errChan)
-	}()
-
-	if err := <-errChan; err != nil {
-		return err
-	}
-
-	gb.finalizeGraph()
-	return nil
-}
-
-// TODO: TMP BIG FILES Sequential
-func (gb *GraphBuilder) BuildGraphSequentialLargeFile(filePath string, processFunc func([]string) error) error {
-	gb.ClearGraph() // ✅ очищаем граф перед новой загрузкой
-
-	file, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("ошибка открытия файла: %v", err)
-	}
-	defer file.Close()
-
-	totalLines, err := countLines(filePath)
-	if err != nil {
-		return fmt.Errorf("ошибка подсчета строк: %v", err)
-	}
-	gb.totalRecords = totalLines
-
-	// fileInfo, err := file.Stat()
-	// if err != nil {
-	// 	return fmt.Errorf("ошибка получения информации о файле: %v", err)
-	// }
-	// totalSize := fileInfo.Size()
-
-	const blockSize = 1024 * 1024
-	buffer := make([]byte, blockSize)
-
-	var carryOver string
-	var bytesRead int64
-
-	progress := NewProgressLogger(totalLines, "BuildGraphSequentialLargeFile", true)
-	defer progress.Done()
-
-	headerSkipped := false
-
-	for {
-		n, err := file.Read(buffer)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("ошибка чтения файла: %v", err)
-		}
-
-		bytesRead += int64(n)
-		data := carryOver + string(buffer[:n])
-		lines := strings.Split(data, "\n")
-
-		if len(lines) == 0 {
-			continue
-		}
-
-		// Последняя строка, возможно, обрезана
-		carryOver = lines[len(lines)-1]
-		lines = lines[:len(lines)-1]
-
-		for _, line := range lines {
-			if line == "" {
-				continue
-			}
-
-			if !headerSkipped {
-				log.Printf("Пропущен заголовок: %s", line)
-				headerSkipped = true
-				continue
-			}
-
-			record := strings.Split(line, ",")
-			if err := processFunc(record); err != nil {
-				return err
-			}
-
-			progress.Inc()
-		}
-	}
-
-	// Обрабатываем оставшуюся строку
-	if carryOver != "" {
-		if !headerSkipped {
-			log.Printf("Пропущен заголовок: %s", carryOver)
-		} else {
-			record := strings.Split(carryOver, ",")
-			if err := processFunc(record); err != nil {
-				return err
-			}
-			progress.Inc()
-		}
-	}
-
-	gb.finalizeGraph()
-	return nil
-}
-
-func (gb *GraphBuilder) ProcessFileInChunks(filePath string, chunkSize int) error {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-
-	chunk := []string{}
-	for scanner.Scan() {
-		line := scanner.Text()
-		chunk = append(chunk, line)
-
-		// Обрабатываем чанк, если достигнут нужный размер
-		if len(chunk) >= chunkSize {
-			if err := gb.processChunk(chunk); err != nil {
-				return err
-			}
-			chunk = []string{} // Очищаем чанк
-			runtime.GC()       // Вызываем сборщик мусора
-		}
-	}
-
-	// Обрабатываем оставшиеся строки
-	if len(chunk) > 0 {
-		if err := gb.processChunk(chunk); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (gb *GraphBuilder) processChunk(chunk []string) error {
-	for _, line := range chunk {
-		record := strings.Split(line, ",")
-		event := &Event{
-			ID:        record[0],
-			SessionID: record[0],
-			Timestamp: parseTimestamp(record[1]),
-			Desc:      record[2],
-		}
-		gb.ProcessEvent(event)
-	}
-	return nil
 }
 
 func parseTimestamp(timestampStr string) time.Time {
