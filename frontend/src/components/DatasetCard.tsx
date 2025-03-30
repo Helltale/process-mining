@@ -10,6 +10,13 @@ interface Props {
   onDelete: () => void;
 }
 
+const humanFileSize = (bytes: number) => {
+  if (bytes === 0) return '0 B';
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + sizes[i];
+};
+
 const DatasetCard: React.FC<Props> = ({ dataset, onDelete }) => {
   const navigate = useNavigate();
 
@@ -20,6 +27,9 @@ const DatasetCard: React.FC<Props> = ({ dataset, onDelete }) => {
           <div className="font-semibold text-lg">{dataset.name}</div>
           <div className="text-sm text-gray-400">
             Загружено: {new Date(dataset.uploadedAt).toLocaleString()}
+          </div>
+          <div className="text-sm text-gray-400">
+            Размер: {humanFileSize(dataset.size)}
           </div>
         </div>
         <Button

@@ -34,39 +34,56 @@ func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024*1024)
 
-	file, _, err := r.FormFile("file")
+	// Получаем файл и его оригинальное имя
+	file, header, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Ошибка получения файла", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
-	tmpManager := infrastructure.NewTMPFileManager()
-	tempFile, err := tmpManager.CreateTempFile("uploaded-", "csv")
-	if err != nil {
-		http.Error(w, "Ошибка создания временного файла", http.StatusInternalServerError)
+	// Имя файла без директорий
+	filename := filepath.Base(header.Filename)
+
+	// Путь к целевому файлу
+	filePath := filepath.Join("./tmp", filename)
+
+	// Проверка: существует ли файл с таким именем
+	if _, err := os.Stat(filePath); err == nil {
+		http.Error(w, "Файл с таким именем уже существует", http.StatusConflict)
 		return
 	}
-	defer tempFile.Close()
 
-	if _, err := io.Copy(tempFile, file); err != nil {
+	// Создаем файл в директории tmp
+	outFile, err := os.Create(filePath)
+	if err != nil {
+		http.Error(w, "Ошибка создания файла", http.StatusInternalServerError)
+		return
+	}
+	defer outFile.Close()
+
+	// Копируем содержимое
+	if _, err := io.Copy(outFile, file); err != nil {
 		http.Error(w, "Ошибка записи файла", http.StatusInternalServerError)
 		return
 	}
 
-	if err := validateCSVFile(tempFile.Name()); err != nil {
+	// Валидируем CSV
+	if err := validateCSVFile(filePath); err != nil {
+		_ = os.Remove(filePath) // удаляем, если невалидный
 		http.Error(w, fmt.Sprintf("Файл не прошел валидацию: %v", err), http.StatusBadRequest)
 		return
 	}
 
+	// Отправляем клиенту имя
 	resp := map[string]interface{}{
-		"file":   filepath.Base(tempFile.Name()),
+		"file":   filename,
 		"status": "ready",
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 
-	log.Println("Файл сохранён и свалидирован, готов к построению графа.")
+	log.Printf("Файл [%s] сохранён и валиден.", filename)
 }
 
 func (h *GraphHandler) BuildGraph(w http.ResponseWriter, r *http.Request) {
@@ -208,10 +225,12 @@ func (h *GraphHandler) ListDatasets(w http.ResponseWriter, r *http.Request) {
 		}
 
 		modTime := info.ModTime().UTC()
+		size := info.Size() // получаем размер в байтах
 
 		datasets = append(datasets, map[string]interface{}{
 			"id":         info.Name(),
 			"name":       info.Name(),
+			"size":       size,
 			"createdAt":  modTime.Format(time.RFC3339),
 			"uploadedAt": modTime.Format(time.RFC3339),
 			"status":     "ready",
@@ -255,4 +274,31 @@ func validateCSVFile(path string) error {
 	}
 
 	return nil
+}
+
+func (h *GraphHandler) DeleteDataset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
+		return
+	}
+
+	filename := strings.TrimPrefix(r.URL.Path, "/api/tmp/")
+	if filename == "" {
+		http.Error(w, "Не указано имя файла", http.StatusBadRequest)
+		return
+	}
+
+	filePath := filepath.Join("./tmp", filename)
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		http.Error(w, "Файл не найден", http.StatusNotFound)
+		return
+	}
+
+	if err := os.Remove(filePath); err != nil {
+		http.Error(w, "Ошибка при удалении файла", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Файл удалён"))
 }

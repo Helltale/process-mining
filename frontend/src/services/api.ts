@@ -56,7 +56,7 @@ export const buildGraph = async (file: string) => {
   
 
 export const deleteDataset = async (id: string) => {
-  const res = await fetch(`${BASE_URL}/datasets/${id}`, {
+  const res = await fetch(`${BASE_URL}/api/tmp/${id}`, {
     method: 'DELETE',
   });
 

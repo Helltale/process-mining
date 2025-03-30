@@ -35,7 +35,7 @@ var serveCmd = &cobra.Command{
 		mux.Handle("/build", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.BuildGraph))))
 		mux.Handle("/graph", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.ServeGraphData))))
 		mux.Handle("/clear", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.ClearGraph))))
-
+		mux.Handle("/api/tmp/", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.DeleteDataset))))
 		mux.Handle("/api/datasets", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.ListDatasets))))
 
 		// Обработчик для неизвестных путей с CORS
