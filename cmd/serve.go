@@ -29,16 +29,26 @@ var serveCmd = &cobra.Command{
 		graphService := service.NewGraphService(graphBuilder)
 		graphHandler := presentation.NewGraphHandler(graphService)
 
-		http.Handle("/", http.FileServer(http.Dir("./static"))) // Статические файлы
-		http.HandleFunc("/upload", graphHandler.UploadFile)     // Загрузка CSV
-		http.HandleFunc("/graph", graphHandler.ServeGraphData)  // Получение данных графа
-		http.HandleFunc("/clear", graphHandler.ClearGraph)      // Очистка графа
+		mux := http.NewServeMux()
+
+		mux.Handle("/upload", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.UploadFile))))
+		mux.Handle("/graph", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.ServeGraphData))))
+		mux.Handle("/clear", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.ClearGraph))))
+		mux.Handle("/api/datasets", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.ListDatasets))))
+
+		fmt.Println("ручки прикручены")
+
+		// Обработчик для неизвестных путей с CORS
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			presentation.WithCORS(http.FileServer(http.Dir("./static"))).ServeHTTP(w, r)
+		})
 
 		srv := &http.Server{
+			Handler:      mux,
 			Addr:         fmt.Sprintf(":%s", cfg.APP_PORT),
-			WriteTimeout: cfg.GetAppMaxWriteTime() * time.Minute, // Увеличенный таймаут для записи
-			ReadTimeout:  cfg.GetAppMaxReadTime() * time.Minute,  // Увеличенный таймаут для чтения
-			IdleTimeout:  60 * time.Second,                       // Таймаут бездействия
+			WriteTimeout: cfg.GetAppMaxWriteTime() * time.Minute,
+			ReadTimeout:  cfg.GetAppMaxReadTime() * time.Minute,
+			IdleTimeout:  60 * time.Second,
 		}
 
 		// Логирование запуска сервера

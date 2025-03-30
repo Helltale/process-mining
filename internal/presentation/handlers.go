@@ -6,6 +6,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/Helltale/process-mining/internal/domain"
 	"github.com/Helltale/process-mining/internal/infrastructure"
@@ -141,4 +144,47 @@ func (h *GraphHandler) ClearGraph(w http.ResponseWriter, r *http.Request) {
 	h.graphService.ClearGraph()
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Граф успешно очищен"))
+}
+
+func (h *GraphHandler) ListDatasets(w http.ResponseWriter, r *http.Request) {
+	// проверим, что метод GET
+	if r.Method != http.MethodGet {
+		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
+		return
+	}
+
+	const tmpDir = "./tmp"
+
+	files, err := os.ReadDir(tmpDir)
+	if err != nil {
+		http.Error(w, "Ошибка чтения временной директории", http.StatusInternalServerError)
+		return
+	}
+
+	var datasets []map[string]interface{}
+
+	for _, file := range files {
+		if file.IsDir() || filepath.Ext(file.Name()) != ".csv" {
+			continue
+		}
+
+		info, err := file.Info()
+		if err != nil {
+			continue
+		}
+
+		modTime := info.ModTime().UTC()
+
+		datasets = append(datasets, map[string]interface{}{
+			"id":         info.Name(),
+			"name":       info.Name(),
+			"createdAt":  modTime.Format(time.RFC3339),
+			"uploadedAt": modTime.Format(time.RFC3339),
+			"status":     "ready",
+			"progress":   100,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(datasets)
 }
