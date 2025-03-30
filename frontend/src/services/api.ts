@@ -44,6 +44,17 @@ export const fetchDatasets = async (): Promise<Dataset[]> => {
   return res.json();
 };
 
+export const buildGraph = async (file: string) => {
+    const res = await fetch(`${BASE_URL}/build?file=${encodeURIComponent(file)}`, {
+      method: 'POST',
+    });
+  
+    if (!res.ok) {
+      throw new Error('Ошибка построения графа');
+    }
+  };
+  
+
 export const deleteDataset = async (id: string) => {
   const res = await fetch(`${BASE_URL}/datasets/${id}`, {
     method: 'DELETE',

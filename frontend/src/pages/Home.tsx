@@ -21,12 +21,34 @@ const Home: React.FC = () => {
     loadDatasets();
   }, []);
 
+  const simulateProgress = (
+    id: string,
+    targetProgress: number = 100,
+    speed: number = 20
+  ) => {
+    let current = 0;
+    const interval = setInterval(() => {
+      current += 5;
+      setDatasets((prev) =>
+        prev.map((d) =>
+          d.id === id
+            ? { ...d, progress: Math.min(current, targetProgress) }
+            : d
+        )
+      );
+
+      if (current >= targetProgress) clearInterval(interval);
+    }, speed);
+  };
+
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    const tempId = Date.now().toString();
+
     const tempDataset: Dataset = {
-      id: Date.now().toString(),
+      id: tempId,
       name: file.name,
       createdAt: new Date().toISOString(),
       uploadedAt: new Date().toISOString(),
@@ -35,19 +57,23 @@ const Home: React.FC = () => {
     };
 
     setDatasets((prev) => [tempDataset, ...prev]);
+    simulateProgress(tempId, 90); // покажем прогресс до 90%, пока сервер отвечает
 
     try {
       const validatedDataset = await uploadDataset(file, tempDataset);
+
       setDatasets((prev) =>
-        prev.map((d) => (d.id === tempDataset.id ? validatedDataset : d))
+        prev.map((d) =>
+          d.id === tempId
+            ? { ...validatedDataset, progress: 100 }
+            : d
+        )
       );
     } catch (error) {
       console.error('Ошибка загрузки:', error);
       setDatasets((prev) =>
         prev.map((d) =>
-          d.id === tempDataset.id
-            ? { ...d, status: 'error', progress: 0 }
-            : d
+          d.id === tempId ? { ...d, status: 'error', progress: 0 } : d
         )
       );
     }

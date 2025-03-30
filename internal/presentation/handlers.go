@@ -1,6 +1,7 @@
 package presentation
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,9 +9,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/Helltale/process-mining/internal/domain"
 	"github.com/Helltale/process-mining/internal/infrastructure"
 	"github.com/Helltale/process-mining/internal/service"
 )
@@ -27,112 +28,146 @@ func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	log.Println("Начало обработки запроса на загрузку файла")
 
 	if r.Method != http.MethodPost {
-		log.Println("Метод не поддерживается")
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Ограничение размера тела запроса до 3 ГБ
 	r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024*1024)
 
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		log.Printf("Ошибка получения файла: %v", err)
-		http.Error(w, "Ошибка загрузки файла", http.StatusBadRequest)
+		http.Error(w, "Ошибка получения файла", http.StatusBadRequest)
 		return
 	}
 	defer file.Close()
 
 	tmpManager := infrastructure.NewTMPFileManager()
-	tmpManager.DeleteTempFile()
-
 	tempFile, err := tmpManager.CreateTempFile("uploaded-", "csv")
 	if err != nil {
-		log.Printf("Ошибка создания временного файла: %v", err)
 		http.Error(w, "Ошибка создания временного файла", http.StatusInternalServerError)
 		return
 	}
 	defer tempFile.Close()
 
-	// Буферизированное копирование файла
-	buf := make([]byte, 1024*1024)
-	var totalBytes int64
-	for {
-		n, err := file.Read(buf)
-		if n > 0 {
-			if _, writeErr := tempFile.Write(buf[:n]); writeErr != nil {
-				log.Printf("Ошибка записи во временный файл: %v", writeErr)
-				http.Error(w, "Ошибка записи во временный файл", http.StatusInternalServerError)
-				return
-			}
-			totalBytes += int64(n)
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Printf("Ошибка чтения файла: %v", err)
-			http.Error(w, "Ошибка чтения файла", http.StatusInternalServerError)
-			return
-		}
+	if _, err := io.Copy(tempFile, file); err != nil {
+		http.Error(w, "Ошибка записи файла", http.StatusInternalServerError)
+		return
 	}
 
-	log.Printf("Файл успешно загружен. Размер: %.2f МБ", float64(totalBytes)/1024/1024)
-	log.Printf("Путь к файлу: %s", tempFile.Name())
+	if err := validateCSVFile(tempFile.Name()); err != nil {
+		http.Error(w, fmt.Sprintf("Файл не прошел валидацию: %v", err), http.StatusBadRequest)
+		return
+	}
 
-	// Построение графа
-	err = h.graphService.BuildGraphFromCSV(tempFile.Name())
-	if err != nil {
-		log.Printf("Ошибка построения графа: %v", err)
+	resp := map[string]interface{}{
+		"file":   filepath.Base(tempFile.Name()),
+		"status": "ready",
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+
+	log.Println("Файл сохранён и свалидирован, готов к построению графа.")
+}
+
+func (h *GraphHandler) BuildGraph(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
+		return
+	}
+
+	file := r.URL.Query().Get("file")
+	if file == "" {
+		http.Error(w, "Не указано имя файла", http.StatusBadRequest)
+		return
+	}
+
+	fullPath := filepath.Join("./tmp", file)
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		http.Error(w, "Файл не найден", http.StatusNotFound)
+		return
+	}
+
+	if err := h.graphService.BuildGraphFromCSV(fullPath); err != nil {
 		http.Error(w, fmt.Sprintf("Ошибка построения графа: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Файл успешно загружен и граф построен"))
-	log.Println("Обработка завершена успешно")
+	w.Write([]byte("Граф построен"))
 }
 
 func (h *GraphHandler) ServeGraphData(w http.ResponseWriter, r *http.Request) {
+	file := r.URL.Query().Get("file")
+	if file == "" {
+		http.Error(w, "file param is required", http.StatusBadRequest)
+		return
+	}
+
+	filePath := fmt.Sprintf("./tmp/%s", file)
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+
+	if err := h.graphService.BuildGraphFromCSV(filePath); err != nil {
+		http.Error(w, fmt.Sprintf("ошибка построения графа: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	graphData, err := h.graphService.GetGraphData()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// // Логирование данных для отладки
-	// for _, edge := range graphData.Edges {
-	// 	fmt.Printf("Edge: %s -> %s, Style: %s\n", edge.From, edge.To, edge.Style)
-	// }
+	type CytoscapeNode struct {
+		ID    string `json:"id"`
+		Label string `json:"label"`
+		Count int    `json:"count"`
+		Total int    `json:"total"`
+		Color string `json:"color"`
+	}
+	type CytoscapeEdge struct {
+		Source string `json:"source"`
+		Target string `json:"target"`
+		Label  string `json:"label"`
+		Count  int    `json:"count"`
+		Style  string `json:"style"`
+	}
 
-	// Преобразуем данные в формат, понятный фронтенду
 	cytoscapeData := struct {
-		Nodes []map[string]*domain.Node `json:"nodes"`
-		Edges []map[string]*domain.Edge `json:"edges"`
+		Nodes []map[string]CytoscapeNode `json:"nodes"`
+		Edges []map[string]CytoscapeEdge `json:"edges"`
 	}{
-		Nodes: make([]map[string]*domain.Node, len(graphData.Nodes)),
-		Edges: make([]map[string]*domain.Edge, len(graphData.Edges)),
+		Nodes: make([]map[string]CytoscapeNode, len(graphData.Nodes)),
+		Edges: make([]map[string]CytoscapeEdge, len(graphData.Edges)),
 	}
 
 	for i, node := range graphData.Nodes {
-		cytoscapeData.Nodes[i] = map[string]*domain.Node{"data": node}
+		cytoscapeData.Nodes[i] = map[string]CytoscapeNode{"data": {
+			ID:    strings.TrimSpace(node.ID),
+			Label: strings.TrimSpace(node.Label),
+			Count: node.Count,
+			Total: node.Total,
+			Color: node.Color,
+		}}
 	}
 
 	for i, edge := range graphData.Edges {
-		edge.Label = fmt.Sprintf("%d\n%.2f sec avg", edge.Count, edge.AvgDuration)
-		cytoscapeData.Edges[i] = map[string]*domain.Edge{"data": edge}
+		cytoscapeData.Edges[i] = map[string]CytoscapeEdge{"data": {
+			Source: strings.TrimSpace(edge.From),
+			Target: strings.TrimSpace(edge.To),
+			Label:  edge.Label,
+			Count:  edge.Count,
+			Style:  edge.Style,
+		}}
 	}
 
-	// Отправляем данные клиенту
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(cytoscapeData); err != nil {
-		http.Error(w, "Ошибка сериализации", http.StatusInternalServerError)
-		return
-	}
+	json.NewEncoder(w).Encode(cytoscapeData)
 }
 
 func (h *GraphHandler) ClearGraph(w http.ResponseWriter, r *http.Request) {
-
 	tmpManager := infrastructure.NewTMPFileManager()
 	tmpManager.DeleteTempFile()
 
@@ -147,7 +182,6 @@ func (h *GraphHandler) ClearGraph(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *GraphHandler) ListDatasets(w http.ResponseWriter, r *http.Request) {
-	// проверим, что метод GET
 	if r.Method != http.MethodGet {
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
 		return
@@ -187,4 +221,38 @@ func (h *GraphHandler) ListDatasets(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(datasets)
+}
+
+func validateCSVFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("не удалось открыть файл: %w", err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	if scanner.Scan() {
+		log.Printf("Заголовок: %s", scanner.Text())
+	}
+
+	lineNum := 1
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
+		fields := strings.Split(line, ",")
+
+		if len(fields) != 3 {
+			return fmt.Errorf("строка %d: ожидалось 3 поля, получено %d", lineNum, len(fields))
+		}
+
+		if _, err := time.Parse(time.RFC3339, strings.TrimSpace(fields[1])); err != nil {
+			return fmt.Errorf("строка %d: некорректная дата %q", lineNum, fields[1])
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("ошибка чтения файла: %w", err)
+	}
+
+	return nil
 }

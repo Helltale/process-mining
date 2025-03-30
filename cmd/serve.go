@@ -32,11 +32,11 @@ var serveCmd = &cobra.Command{
 		mux := http.NewServeMux()
 
 		mux.Handle("/upload", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.UploadFile))))
+		mux.Handle("/build", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.BuildGraph))))
 		mux.Handle("/graph", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.ServeGraphData))))
 		mux.Handle("/clear", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.ClearGraph))))
-		mux.Handle("/api/datasets", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.ListDatasets))))
 
-		fmt.Println("ручки прикручены")
+		mux.Handle("/api/datasets", presentation.WithCORS(presentation.LogRequest(http.HandlerFunc(graphHandler.ListDatasets))))
 
 		// Обработчик для неизвестных путей с CORS
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
