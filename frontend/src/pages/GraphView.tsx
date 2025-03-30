@@ -1,10 +1,10 @@
 // src/pages/GraphView.tsx
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Download, RotateCw } from 'lucide-react';
+import { Download, RotateCw, ArrowLeft } from 'lucide-react';
 import cytoscape from 'cytoscape';
 import svg from 'cytoscape-svg';
 import dagre from 'cytoscape-dagre';
@@ -13,6 +13,7 @@ cytoscape.use(dagre);
 svg(cytoscape);
 
 const GraphView: React.FC = () => {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [graphData, setGraphData] = useState<any>(null);
   const [threshold, setThreshold] = useState(100);
@@ -162,7 +163,6 @@ const GraphView: React.FC = () => {
         //@ts-ignore
         edgeSep: 30,
       },
-      
     });
 
     cyRef.current = cy;
@@ -183,12 +183,14 @@ const GraphView: React.FC = () => {
   return (
     <div className="p-6 space-y-4 max-w-screen-xl mx-auto">
       <div className="flex justify-between items-center">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => window.location.href = '/'}>
-            ← Назад к датасетам
-          </Button>
-          <h2 className="text-xl font-bold text-white">Граф процесса для: {file}</h2>
-        </div>
+        <Button onClick={() => navigate('/')} variant="outline">
+          <ArrowLeft className="w-4 h-4 mr-1" /> Назад к датасетам
+        </Button>
+
+        <h2 className="text-xl font-bold text-white text-center flex-1">
+          Граф процесса для: {file}
+        </h2>
+
         <div className="flex gap-2">
           <Button onClick={downloadSVG} variant="outline">
             <Download className="w-4 h-4 mr-1" /> Скачать SVG
@@ -223,8 +225,7 @@ const GraphView: React.FC = () => {
           </div>
         )}
       </div>
-  </div>
-
+    </div>
   );
 };
 
