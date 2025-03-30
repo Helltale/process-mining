@@ -34,7 +34,7 @@ func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024*1024)
 
-	// Получаем файл и его оригинальное имя
+	// Получаем файл из формы
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Ошибка получения файла", http.StatusBadRequest)
@@ -42,48 +42,51 @@ func (h *GraphHandler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Имя файла без директорий
-	filename := filepath.Base(header.Filename)
+	// Очистка имени файла от потенциальных уязвимостей
+	safeFilename := filepath.Base(header.Filename)
+	dstPath := filepath.Join("./tmp", safeFilename)
 
-	// Путь к целевому файлу
-	filePath := filepath.Join("./tmp", filename)
-
-	// Проверка: существует ли файл с таким именем
-	if _, err := os.Stat(filePath); err == nil {
-		http.Error(w, "Файл с таким именем уже существует", http.StatusConflict)
-		return
-	}
-
-	// Создаем файл в директории tmp
-	outFile, err := os.Create(filePath)
+	dstFile, err := os.Create(dstPath)
 	if err != nil {
 		http.Error(w, "Ошибка создания файла", http.StatusInternalServerError)
 		return
 	}
-	defer outFile.Close()
+	defer dstFile.Close()
 
 	// Копируем содержимое
-	if _, err := io.Copy(outFile, file); err != nil {
+	if _, err := io.Copy(dstFile, file); err != nil {
 		http.Error(w, "Ошибка записи файла", http.StatusInternalServerError)
 		return
 	}
 
-	// Валидируем CSV
-	if err := validateCSVFile(filePath); err != nil {
-		_ = os.Remove(filePath) // удаляем, если невалидный
+	// Получаем размер
+	info, err := dstFile.Stat()
+	if err != nil {
+		http.Error(w, "Ошибка получения информации о файле", http.StatusInternalServerError)
+		return
+	}
+
+	// Валидация CSV с трекингом прогресса
+	if err := validateCSVFile(dstPath, safeFilename); err != nil {
 		http.Error(w, fmt.Sprintf("Файл не прошел валидацию: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	// Отправляем клиенту имя
+	// Ответ клиенту
 	resp := map[string]interface{}{
-		"file":   filename,
-		"status": "ready",
+		"id":         safeFilename,
+		"name":       safeFilename,
+		"status":     "ready",
+		"createdAt":  time.Now().Format(time.RFC3339),
+		"uploadedAt": time.Now().Format(time.RFC3339),
+		"progress":   100,
+		"size":       info.Size(),
 	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 
-	log.Printf("Файл [%s] сохранён и валиден.", filename)
+	log.Printf("Файл %s успешно загружен и валидирован", safeFilename)
 }
 
 func (h *GraphHandler) BuildGraph(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +200,6 @@ func (h *GraphHandler) ClearGraph(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Граф успешно очищен"))
 }
-
 func (h *GraphHandler) ListDatasets(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Метод не поддерживается", http.StatusMethodNotAllowed)
@@ -242,7 +244,7 @@ func (h *GraphHandler) ListDatasets(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(datasets)
 }
 
-func validateCSVFile(path string) error {
+func validateCSVFile(path string, fileID string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("не удалось открыть файл: %w", err)
@@ -250,6 +252,15 @@ func validateCSVFile(path string) error {
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
+
+	totalLines := 0
+	for scanner.Scan() {
+		totalLines++
+	}
+	_, _ = f.Seek(0, 0) // вернуться в начало
+	scanner = bufio.NewScanner(f)
+
+	// Пропустить заголовок
 	if scanner.Scan() {
 		log.Printf("Заголовок: %s", scanner.Text())
 	}
@@ -261,18 +272,26 @@ func validateCSVFile(path string) error {
 		fields := strings.Split(line, ",")
 
 		if len(fields) != 3 {
+			setProgress(fileID, 100)
 			return fmt.Errorf("строка %d: ожидалось 3 поля, получено %d", lineNum, len(fields))
 		}
 
 		if _, err := time.Parse(time.RFC3339, strings.TrimSpace(fields[1])); err != nil {
+			setProgress(fileID, 100)
 			return fmt.Errorf("строка %d: некорректная дата %q", lineNum, fields[1])
 		}
+
+		// Обновляем прогресс
+		progress := int((float64(lineNum) / float64(totalLines)) * 100)
+		setProgress(fileID, progress)
 	}
 
 	if err := scanner.Err(); err != nil {
+		setProgress(fileID, 100)
 		return fmt.Errorf("ошибка чтения файла: %w", err)
 	}
 
+	setProgress(fileID, 100)
 	return nil
 }
 
@@ -301,4 +320,16 @@ func (h *GraphHandler) DeleteDataset(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Файл удалён"))
+}
+
+func (h *GraphHandler) GetProgress(w http.ResponseWriter, r *http.Request) {
+	file := r.URL.Query().Get("file")
+	if file == "" {
+		http.Error(w, "file param is required", http.StatusBadRequest)
+		return
+	}
+
+	percent := getProgress(file)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"progress": percent})
 }

@@ -20,12 +20,19 @@ export const uploadDataset = async (
     throw new Error(`Ошибка загрузки: ${res.status} ${errText}`);
   }
 
+  const data = await res.json();
+
   return {
-    ...tempDataset,
-    status: 'ready',
-    progress: 100,
+    id: data.id,
+    name: data.name,
+    createdAt: data.createdAt,
+    uploadedAt: data.uploadedAt,
+    status: data.status,
+    progress: data.progress,
+    size: data.size,
   };
 };
+
 
 export const fetchDatasets = async (): Promise<Dataset[]> => {
   const res = await fetch(`${BASE_URL}/api/datasets`);
@@ -64,4 +71,12 @@ export const deleteDataset = async (id: string) => {
     const errText = await res.text();
     throw new Error(`Ошибка удаления: ${res.status} ${errText}`);
   }
+};
+
+export const pollValidationProgress = async (file: string): Promise<number> => {
+  const res = await fetch(`${BASE_URL}/api/progress?file=${file}`);
+  if (!res.ok) return 0;
+
+  const data = await res.json();
+  return data.progress ?? 0;
 };

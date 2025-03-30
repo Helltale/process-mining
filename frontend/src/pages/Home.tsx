@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import DatasetCard from '@/components/DatasetCard';
-import { uploadDataset, fetchDatasets, deleteDataset } from '@/services/api';
+import { uploadDataset, fetchDatasets, deleteDataset, pollValidationProgress } from '@/services/api';
 import { Dataset } from '@/types';
 
 const Home: React.FC = () => {
@@ -21,26 +21,6 @@ const Home: React.FC = () => {
     loadDatasets();
   }, []);
 
-  const simulateProgress = (
-    id: string,
-    targetProgress: number = 100,
-    speed: number = 20
-  ) => {
-    let current = 0;
-    const interval = setInterval(() => {
-      current += 5;
-      setDatasets((prev) =>
-        prev.map((d) =>
-          d.id === id
-            ? { ...d, progress: Math.min(current, targetProgress) }
-            : d
-        )
-      );
-
-      if (current >= targetProgress) clearInterval(interval);
-    }, speed);
-  };
-
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -52,21 +32,33 @@ const Home: React.FC = () => {
       name: file.name,
       createdAt: new Date().toISOString(),
       uploadedAt: new Date().toISOString(),
+      size: file.size,
       status: 'validating',
       progress: 0,
     };
 
     setDatasets((prev) => [tempDataset, ...prev]);
-    simulateProgress(tempId, 90); // покажем прогресс до 90%, пока сервер отвечает
 
     try {
       const validatedDataset = await uploadDataset(file, tempDataset);
 
+      // Пуллинг прогресса валидации с сервера
+      let progress = 0;
+      while (progress < 100) {
+        await new Promise((res) => setTimeout(res, 500));
+        progress = await pollValidationProgress(validatedDataset.id);
+
+        setDatasets((prev) =>
+          prev.map((d) =>
+            d.id === tempId ? { ...d, progress, status: 'validating' } : d
+          )
+        );
+      }
+
+      // По завершении обновляем датасет
       setDatasets((prev) =>
         prev.map((d) =>
-          d.id === tempId
-            ? { ...validatedDataset, progress: 100 }
-            : d
+          d.id === tempId ? { ...validatedDataset, progress: 100, status: 'ready' } : d
         )
       );
     } catch (error) {
@@ -84,14 +76,18 @@ const Home: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    await deleteDataset(id);
-    setDatasets((prev) => prev.filter((d) => d.id !== id));
+    try {
+      await deleteDataset(id);
+      setDatasets((prev) => prev.filter((d) => d.id !== id));
+    } catch (error) {
+      console.error('Ошибка удаления датасета:', error);
+    }
   };
 
   return (
     <div className="p-6 max-w-screen-lg mx-auto space-y-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-white">📁 Мои датасеты</h1>
+        <h1 className="text-3xl font-bold text-white">📁 Датасеты</h1>
 
         <div>
           <input
@@ -111,13 +107,19 @@ const Home: React.FC = () => {
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2 md:grid-cols-3">
-        {datasets.map((dataset) => (
-          <DatasetCard
-            key={dataset.id}
-            dataset={dataset}
-            onDelete={() => handleDelete(dataset.id)}
-          />
-        ))}
+        {Array.isArray(datasets) && datasets.length > 0 ? (
+          datasets.map((dataset) => (
+            <DatasetCard
+              key={dataset.id}
+              dataset={dataset}
+              onDelete={() => handleDelete(dataset.id)}
+            />
+          ))
+        ) : (
+          <div className="text-white opacity-60 text-sm col-span-full">
+            Датасеты не найдены. Загрузите CSV-файл, чтобы начать.
+          </div>
+        )}
       </div>
     </div>
   );
