@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ type Event struct {
 }
 
 func main() {
+	fmt.Println("✅ Запуск скрипта на GO")
 	inFile := flag.String("file", "", "Путь до CSV-файла")
 	outFile := flag.String("output", "graph.html", "Путь для HTML-выхода")
 	flag.Parse()
@@ -48,7 +50,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	events, err := readCSV(*inFile)
+	fileInfo, err := os.Stat(*inFile)
+	if err != nil {
+		fmt.Println("❌ Ошибка доступа к файлу:", err)
+		os.Exit(1)
+	}
+
+	totalLines, err := countLines(*inFile)
+	if err != nil {
+		fmt.Println("❌ Ошибка подсчета строк:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("📦 Размер файла: %.2f MB\tСтрок в файле: %d\n", float64(fileInfo.Size())/1024/1024, totalLines)
+
+	start := time.Now()
+	progressChan := make(chan int)
+	go logProgress(start, totalLines, progressChan)
+
+	events, err := readCSV(*inFile, progressChan)
 	if err != nil {
 		fmt.Println("❌ Ошибка чтения CSV:", err)
 		os.Exit(1)
@@ -72,7 +91,44 @@ func main() {
 	fmt.Println("✅ Граф сохранён в:", *outFile)
 }
 
-func readCSV(path string) ([]Event, error) {
+func countLines(path string) (int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	scanner := csv.NewReader(f)
+	records, err := scanner.ReadAll()
+	if err != nil {
+		return 0, err
+	}
+	return len(records), nil
+}
+
+func logProgress(start time.Time, total int, ch <-chan int) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	var processed int
+	var mem runtime.MemStats
+
+	for {
+		select {
+		case <-ticker.C:
+			elapsed := time.Since(start).Seconds()
+			runtime.ReadMemStats(&mem)
+			fmt.Printf("[Думаю...]\t%.0fs\t%.2f%%\tCPU: %d\tRAM: %.2f MB\n", elapsed, float64(processed)/float64(total)*100, runtime.NumCPU(), float64(mem.Alloc)/1024/1024)
+		case count, ok := <-ch:
+			if !ok {
+				return
+			}
+			processed = count
+		}
+	}
+}
+
+func readCSV(path string, ch chan<- int) ([]Event, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -105,7 +161,10 @@ func readCSV(path string) ([]Event, error) {
 			Timestamp: t,
 			Desc:      strings.TrimSpace(rec[2]),
 		})
+
+		ch <- i + 1
 	}
+	close(ch)
 
 	sort.Slice(events, func(i, j int) bool {
 		if events[i].ID == events[j].ID {
@@ -149,8 +208,6 @@ func buildGraph(events []Event) *Graph {
 
 	for _, event := range events {
 		addNode(event.Desc, "blue")
-
-		// Старт
 		if _, ok := lastEvent[event.ID]; !ok {
 			addNode("start", "green")
 			addEdge("start", event.Desc, "dashed")
@@ -158,7 +215,6 @@ func buildGraph(events []Event) *Graph {
 			prev := lastEvent[event.ID]
 			addEdge(prev.Desc, event.Desc, "")
 		}
-
 		lastEvent[event.ID] = &event
 	}
 
@@ -170,9 +226,8 @@ func buildGraph(events []Event) *Graph {
 	for _, node := range nodeMap {
 		graph.Nodes = append(graph.Nodes, node)
 	}
-
 	for _, edge := range edgeMap {
-		edge.Label = fmt.Sprintf("%d переходов", edge.Count)
+		edge.Label = fmt.Sprintf("%d", edge.Count)
 		graph.Edges = append(graph.Edges, edge)
 	}
 
@@ -180,7 +235,6 @@ func buildGraph(events []Event) *Graph {
 }
 
 func generateHTML(graphJSON string) string {
-	// Всё встраивается прямо внутрь
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
