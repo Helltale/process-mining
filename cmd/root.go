@@ -13,6 +13,7 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Используйте 'serve' для запуска сервера.")
 		fmt.Println("Используйте 'clear' для очистки данных графа.")
+		fmt.Println("Используйте 'build-html' для очистки данных графа.")
 	},
 }
 
