@@ -39,7 +39,25 @@ type Event struct {
 	Desc      string
 }
 
+var (
+	autoParseDate = flag.Bool("autoparse", false, "Попытаться автоматически распознать формат даты")
+)
+
 func main() {
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Пример использования:
+  --file=events.csv --output=graph.html [--autoparse]
+
+CSV файл должен содержать строки вида:
+  id,timestamp,desc
+  123,2023-10-20T12:00:00Z,StartEvent
+  123,2023-10-20T12:05:00Z,EndEvent
+
+Флаги:
+`)
+		flag.PrintDefaults()
+	}
+
 	fmt.Println("✅ Запуск скрипта на GO")
 	inFile := flag.String("file", "", "Путь до CSV-файла")
 	outFile := flag.String("output", "graph.html", "Путь для HTML-выхода")
@@ -128,6 +146,54 @@ func logProgress(start time.Time, total int, ch <-chan int) {
 	}
 }
 
+func tryParseDate(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+
+	formats := []string{
+		time.RFC3339,     // 2006-01-02T15:04:05Z07:00
+		time.RFC3339Nano, // 2006-01-02T15:04:05.999999999Z07:00
+
+		"2006-01-02 15:04:05.000", // 2023-12-31 23:59:59.123
+		"2006/01/02 15:04:05.000", // 2023/12/31 23:59:59.123
+		"02-01-2006 15:04:05.000", // 31-12-2023 23:59:59.123
+		"02/01/2006 15:04:05.000", // 31/12/2023 23:59:59.123
+		"02.01.2006 15:04:05.000", // 31.12.2023 23:59:59.123
+
+		"2006-01-02 15:04:05", // без миллисекунд
+		"2006/01/02 15:04:05",
+		"02-01-2006 15:04:05",
+		"02/01/2006 15:04:05",
+		"02.01.2006 15:04:05",
+
+		"2006-01-02",
+		"02.01.2006",
+		"02/01/2006",
+		"02-01-2006",
+		"2006/01/02",
+
+		"January 2, 2006",
+		"2 Jan 2006",
+		"2 January 2006",
+
+		"02 Jan 2006 15:04",
+		"02 Jan 2006 15:04:05",
+		"Mon Jan 2 15:04:05 2006",
+		"Mon Jan 2 15:04:05 MST 2006",
+
+		"20060102",
+		"20060102T150405",
+		"20060102T150405.000", // 20231231T235959.123
+	}
+
+	for _, f := range formats {
+		if t, err := time.Parse(f, s); err == nil {
+			return t, nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("не удалось распознать дату: %s", s)
+}
+
 func readCSV(path string, ch chan<- int) ([]Event, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -151,7 +217,11 @@ func readCSV(path string, ch chan<- int) ([]Event, error) {
 			return nil, fmt.Errorf("строка %d: ожидается 3 столбца", i+2)
 		}
 
-		t, err := time.Parse(time.RFC3339, strings.TrimSpace(rec[1]))
+		s := strings.TrimSpace(rec[1])
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil && *autoParseDate {
+			t, err = tryParseDate(s)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("строка %d: неверный формат даты: %v", i+2, err)
 		}
