@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/csv"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,23 +13,19 @@ import (
 )
 
 type Node struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-	Color string `json:"color"`
-	Count int    `json:"count"`
+	ID    string
+	Count int
 }
 
 type Edge struct {
-	From  string `json:"from"`
-	To    string `json:"to"`
-	Label string `json:"label"`
-	Style string `json:"style,omitempty"`
-	Count int    `json:"count"`
+	From  string
+	To    string
+	Count int
 }
 
 type Graph struct {
-	Nodes []*Node `json:"nodes"`
-	Edges []*Edge `json:"edges"`
+	Nodes []*Node
+	Edges []*Edge
 }
 
 type Event struct {
@@ -46,12 +41,7 @@ var (
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Пример использования:
-  --file=events.csv --output=graph.html [--autoparse]
-
-CSV файл должен содержать строки вида:
-  id,timestamp,desc
-  123,2023-10-20T12:00:00Z,StartEvent
-  123,2023-10-20T12:05:00Z,EndEvent
+  --file=events.csv --output=graph.graphml [--autoparse]
 
 Флаги:
 `)
@@ -60,7 +50,7 @@ CSV файл должен содержать строки вида:
 
 	fmt.Println("✅ Запуск скрипта на GO")
 	inFile := flag.String("file", "", "Путь до CSV-файла")
-	outFile := flag.String("output", "graph.html", "Путь для HTML-выхода")
+	outFile := flag.String("output", "graph.graphml", "Путь для GraphML-выхода")
 	flag.Parse()
 
 	if *inFile == "" {
@@ -93,16 +83,10 @@ CSV файл должен содержать строки вида:
 
 	graph := buildGraph(events)
 
-	data := map[string]interface{}{
-		"nodes": graph.Nodes,
-		"edges": graph.Edges,
-	}
+	graphml := generateGraphML(graph)
 
-	jsonData, _ := json.Marshal(data)
-	html := generateHTML(string(jsonData))
-
-	if err := os.WriteFile(*outFile, []byte(html), 0644); err != nil {
-		fmt.Println("❌ Ошибка записи HTML:", err)
+	if err := os.WriteFile(*outFile, []byte(graphml), 0644); err != nil {
+		fmt.Println("❌ Ошибка записи GraphML:", err)
 		os.Exit(1)
 	}
 
@@ -150,39 +134,33 @@ func tryParseDate(s string) (time.Time, error) {
 	s = strings.TrimSpace(s)
 
 	formats := []string{
-		time.RFC3339,     // 2006-01-02T15:04:05Z07:00
-		time.RFC3339Nano, // 2006-01-02T15:04:05.999999999Z07:00
-
-		"2006-01-02 15:04:05.000", // 2023-12-31 23:59:59.123
-		"2006/01/02 15:04:05.000", // 2023/12/31 23:59:59.123
-		"02-01-2006 15:04:05.000", // 31-12-2023 23:59:59.123
-		"02/01/2006 15:04:05.000", // 31/12/2023 23:59:59.123
-		"02.01.2006 15:04:05.000", // 31.12.2023 23:59:59.123
-
-		"2006-01-02 15:04:05", // без миллисекунд
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.000",
+		"2006/01/02 15:04:05.000",
+		"02-01-2006 15:04:05.000",
+		"02/01/2006 15:04:05.000",
+		"02.01.2006 15:04:05.000",
+		"2006-01-02 15:04:05",
 		"2006/01/02 15:04:05",
 		"02-01-2006 15:04:05",
 		"02/01/2006 15:04:05",
 		"02.01.2006 15:04:05",
-
 		"2006-01-02",
 		"02.01.2006",
 		"02/01/2006",
 		"02-01-2006",
 		"2006/01/02",
-
 		"January 2, 2006",
 		"2 Jan 2006",
 		"2 January 2006",
-
 		"02 Jan 2006 15:04",
 		"02 Jan 2006 15:04:05",
 		"Mon Jan 2 15:04:05 2006",
 		"Mon Jan 2 15:04:05 MST 2006",
-
 		"20060102",
 		"20060102T150405",
-		"20060102T150405.000", // 20231231T235959.123
+		"20060102T150405.000",
 	}
 
 	for _, f := range formats {
@@ -251,127 +229,91 @@ func buildGraph(events []Event) *Graph {
 	edgeMap := map[string]*Edge{}
 	var graph Graph
 
-	addNode := func(desc string, color string) {
-		if _, ok := nodeMap[desc]; !ok {
-			nodeMap[desc] = &Node{ID: desc, Label: desc, Color: color, Count: 1}
+	addNode := func(id string) {
+		if _, ok := nodeMap[id]; !ok {
+			nodeMap[id] = &Node{ID: id, Count: 1}
 		} else {
-			nodeMap[desc].Count++
+			nodeMap[id].Count++
 		}
 	}
 
-	addEdge := func(from, to, style string) {
+	addEdge := func(from, to string) {
 		key := from + "->" + to
 		if e, ok := edgeMap[key]; ok {
 			e.Count++
 		} else {
-			edgeMap[key] = &Edge{
-				From:  from,
-				To:    to,
-				Label: "",
-				Style: style,
-				Count: 1,
-			}
+			edgeMap[key] = &Edge{From: from, To: to, Count: 1}
 		}
 	}
 
 	lastEvent := map[string]*Event{}
 
 	for _, event := range events {
-		addNode(event.Desc, "blue")
+		addNode(event.Desc)
 		if _, ok := lastEvent[event.ID]; !ok {
-			addNode("start", "green")
-			addEdge("start", event.Desc, "dashed")
+			addNode("start")
+			addEdge("start", event.Desc)
 		} else {
 			prev := lastEvent[event.ID]
-			addEdge(prev.Desc, event.Desc, "")
+			addEdge(prev.Desc, event.Desc)
 		}
 		lastEvent[event.ID] = &event
 	}
 
 	for _, prev := range lastEvent {
-		addNode("end", "red")
-		addEdge(prev.Desc, "end", "dashed")
+		addNode("end")
+		addEdge(prev.Desc, "end")
 	}
 
 	for _, node := range nodeMap {
 		graph.Nodes = append(graph.Nodes, node)
 	}
 	for _, edge := range edgeMap {
-		edge.Label = fmt.Sprintf("%d", edge.Count)
 		graph.Edges = append(graph.Edges, edge)
 	}
 
 	return &graph
 }
 
-func generateHTML(graphJSON string) string {
-	return fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Process Graph</title>
-  <style>
-    html, body, #cy { width: 100%%; height: 100%%; margin: 0; padding: 0; }
-  </style>
-</head>
-<body>
-<div id="cy"></div>
-<script>
-  %s
-</script>
-<script>
-  const graph = %s;
-  const cy = cytoscape({
-    container: document.getElementById('cy'),
-    elements: [
-      ...graph.nodes.map(n => ({ data: n })),
-      ...graph.edges.map(e => ({
-        data: {
-          source: e.from,
-          target: e.to,
-          label: e.label,
-        },
-        classes: e.style === 'dashed' ? 'dashed' : ''
-      }))
-    ],
-    style: [
-      { selector: 'node', style: {
-          'background-color': 'data(color)',
-          'label': 'data(label)',
-          'text-valign': 'center',
-          'text-halign': 'center',
-          'shape': 'round-rectangle',
-          'font-size': 10,
-          'padding': 10
-      }},
-      { selector: 'edge', style: {
-          'width': 2,
-          'label': 'data(label)',
-          'curve-style': 'bezier',
-          'target-arrow-shape': 'triangle',
-          'line-color': '#999',
-          'target-arrow-color': '#999',
-          'font-size': 8,
-          'text-rotation': 'autorotate'
-      }},
-      { selector: '.dashed', style: { 'line-style': 'dashed' } }
-    ],
-    layout: {
-      name: 'grid',
-      fit: true,
-      padding: 30
-    }
-  });
-</script>
-</body>
-</html>`, cytoscapeJS(), graphJSON)
+func generateGraphML(graph *Graph) string {
+	var sb strings.Builder
+
+	sb.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
+	sb.WriteString(`<graphml xmlns="http://graphml.graphdrawing.org/xmlns" ` +
+		`xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ` +
+		`xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns ` +
+		`http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">` + "\n")
+	sb.WriteString(`<graph edgedefault="directed">` + "\n")
+
+	sort.Slice(graph.Nodes, func(i, j int) bool {
+		return graph.Nodes[i].ID < graph.Nodes[j].ID
+	})
+	sort.Slice(graph.Edges, func(i, j int) bool {
+		if graph.Edges[i].From == graph.Edges[j].From {
+			return graph.Edges[i].To < graph.Edges[j].To
+		}
+		return graph.Edges[i].From < graph.Edges[j].From
+	})
+
+	for _, node := range graph.Nodes {
+		sb.WriteString(fmt.Sprintf(`  <node id="%s" />`+"\n", escapeXML(node.ID)))
+	}
+
+	for _, edge := range graph.Edges {
+		sb.WriteString(fmt.Sprintf(`  <edge source="%s" target="%s" />`+"\n", escapeXML(edge.From), escapeXML(edge.To)))
+	}
+
+	sb.WriteString(`</graph>` + "\n")
+	sb.WriteString(`</graphml>` + "\n")
+
+	return sb.String()
 }
 
-func cytoscapeJS() string {
-	data, err := os.ReadFile("cytoscape.min.js")
-	if err != nil {
-		fmt.Println("❌ Не удалось загрузить cytoscape.min.js:", err)
-		os.Exit(1)
-	}
-	return string(data)
+func escapeXML(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, `"`, "&quot;")
+	s = strings.ReplaceAll(s, "'", "&apos;")
+	return s
 }

@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
+<graph edgedefault="directed">
+  <node id="Add to Cart" />
+  <node id="Checkout" />
+  <node id="Confirmation" />
+  <node id="Login" />
+  <node id="Logout" />
+  <node id="Payment" />
+  <node id="Place Order" />
+  <node id="Register" />
+  <node id="Search" />
+  <node id="View Product" />
+  <node id="end" />
+  <node id="start" />
+  <edge source="Add to Cart" target="Add to Cart" />
+  <edge source="Add to Cart" target="Checkout" />
+  <edge source="Add to Cart" target="Confirmation" />
+  <edge source="Add to Cart" target="Login" />
+  <edge source="Add to Cart" target="Logout" />
+  <edge source="Add to Cart" target="Payment" />
+  <edge source="Add to Cart" target="Place Order" />
+  <edge source="Add to Cart" target="Register" />
+  <edge source="Add to Cart" target="Search" />
+  <edge source="Add to Cart" target="View Product" />
+  <edge source="Add to Cart" target="end" />
+  <edge source="Checkout" target="Add to Cart" />
+  <edge source="Checkout" target="Checkout" />
+  <edge source="Checkout" target="Confirmation" />
+  <edge source="Checkout" target="Login" />
+  <edge source="Checkout" target="Logout" />
+  <edge source="Checkout" target="Payment" />
+  <edge source="Checkout" target="Place Order" />
+  <edge source="Checkout" target="Register" />
+  <edge source="Checkout" target="Search" />
+  <edge source="Checkout" target="View Product" />
+  <edge source="Checkout" target="end" />
+  <edge source="Confirmation" target="Add to Cart" />
+  <edge source="Confirmation" target="Checkout" />
+  <edge source="Confirmation" target="Confirmation" />
+  <edge source="Confirmation" target="Login" />
+  <edge source="Confirmation" target="Logout" />
+  <edge source="Confirmation" target="Payment" />
+  <edge source="Confirmation" target="Place Order" />
+  <edge source="Confirmation" target="Register" />
+  <edge source="Confirmation" target="Search" />
+  <edge source="Confirmation" target="View Product" />
+  <edge source="Confirmation" target="end" />
+  <edge source="Login" target="Add to Cart" />
+  <edge source="Login" target="Checkout" />
+  <edge source="Login" target="Confirmation" />
+  <edge source="Login" target="Login" />
+  <edge source="Login" target="Logout" />
+  <edge source="Login" target="Payment" />
+  <edge source="Login" target="Place Order" />
+  <edge source="Login" target="Register" />
+  <edge source="Login" target="Search" />
+  <edge source="Login" target="View Product" />
+  <edge source="Login" target="end" />
+  <edge source="Logout" target="Add to Cart" />
+  <edge source="Logout" target="Checkout" />
+  <edge source="Logout" target="Confirmation" />
+  <edge source="Logout" target="Login" />
+  <edge source="Logout" target="Logout" />
+  <edge source="Logout" target="Payment" />
+  <edge source="Logout" target="Place Order" />
+  <edge source="Logout" target="Register" />
+  <edge source="Logout" target="Search" />
+  <edge source="Logout" target="View Product" />
+  <edge source="Logout" target="end" />
+  <edge source="Payment" target="Add to Cart" />
+  <edge source="Payment" target="Checkout" />
+  <edge source="Payment" target="Confirmation" />
+  <edge source="Payment" target="Login" />
+  <edge source="Payment" target="Logout" />
+  <edge source="Payment" target="Payment" />
+  <edge source="Payment" target="Place Order" />
+  <edge source="Payment" target="Register" />
+  <edge source="Payment" target="Search" />
+  <edge source="Payment" target="View Product" />
+  <edge source="Payment" target="end" />
+  <edge source="Place Order" target="Add to Cart" />
+  <edge source="Place Order" target="Checkout" />
+  <edge source="Place Order" target="Confirmation" />
+  <edge source="Place Order" target="Login" />
+  <edge source="Place Order" target="Logout" />
+  <edge source="Place Order" target="Payment" />
+  <edge source="Place Order" target="Place Order" />
+  <edge source="Place Order" target="Register" />
+  <edge source="Place Order" target="Search" />
+  <edge source="Place Order" target="View Product" />
+  <edge source="Place Order" target="end" />
+  <edge source="Register" target="Add to Cart" />
+  <edge source="Register" target="Checkout" />
+  <edge source="Register" target="Confirmation" />
+  <edge source="Register" target="Login" />
+  <edge source="Register" target="Logout" />
+  <edge source="Register" target="Payment" />
+  <edge source="Register" target="Place Order" />
+  <edge source="Register" target="Register" />
+  <edge source="Register" target="Search" />
+  <edge source="Register" target="View Product" />
+  <edge source="Register" target="end" />
+  <edge source="Search" target="Add to Cart" />
+  <edge source="Search" target="Checkout" />
+  <edge source="Search" target="Confirmation" />
+  <edge source="Search" target="Login" />
+  <edge source="Search" target="Logout" />
+  <edge source="Search" target="Payment" />
+  <edge source="Search" target="Place Order" />
+  <edge source="Search" target="Register" />
+  <edge source="Search" target="Search" />
+  <edge source="Search" target="View Product" />
+  <edge source="Search" target="end" />
+  <edge source="View Product" target="Add to Cart" />
+  <edge source="View Product" target="Checkout" />
+  <edge source="View Product" target="Confirmation" />
+  <edge source="View Product" target="Login" />
+  <edge source="View Product" target="Logout" />
+  <edge source="View Product" target="Payment" />
+  <edge source="View Product" target="Place Order" />
+  <edge source="View Product" target="Register" />
+  <edge source="View Product" target="Search" />
+  <edge source="View Product" target="View Product" />
+  <edge source="View Product" target="end" />
+  <edge source="start" target="Add to Cart" />
+  <edge source="start" target="Checkout" />
+  <edge source="start" target="Confirmation" />
+  <edge source="start" target="Login" />
+  <edge source="start" target="Logout" />
+  <edge source="start" target="Payment" />
+  <edge source="start" target="Place Order" />
+  <edge source="start" target="Register" />
+  <edge source="start" target="Search" />
+  <edge source="start" target="View Product" />
+</graph>
+</graphml>
