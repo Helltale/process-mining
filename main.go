@@ -229,11 +229,11 @@ func buildGraph(events []Event) *Graph {
 	edgeMap := map[string]*Edge{}
 	var graph Graph
 
-	addNode := func(id string) {
-		if _, ok := nodeMap[id]; !ok {
-			nodeMap[id] = &Node{ID: id, Count: 1}
+	addNode := func(realID, label string) {
+		if _, ok := nodeMap[realID]; !ok {
+			nodeMap[realID] = &Node{ID: realID, Count: 1}
 		} else {
-			nodeMap[id].Count++
+			nodeMap[realID].Count++
 		}
 	}
 
@@ -249,20 +249,24 @@ func buildGraph(events []Event) *Graph {
 	lastEvent := map[string]*Event{}
 
 	for _, event := range events {
-		addNode(event.Desc)
+		nodeID := event.Desc + "_" + event.ID // <--- ВАЖНО: id события + процесс
+		addNode(nodeID, event.Desc)
+
 		if _, ok := lastEvent[event.ID]; !ok {
-			addNode("start")
-			addEdge("start", event.Desc)
+			addNode("start_"+event.ID, "start")
+			addEdge("start_"+event.ID, nodeID)
 		} else {
 			prev := lastEvent[event.ID]
-			addEdge(prev.Desc, event.Desc)
+			prevNodeID := prev.Desc + "_" + prev.ID
+			addEdge(prevNodeID, nodeID)
 		}
 		lastEvent[event.ID] = &event
 	}
 
 	for _, prev := range lastEvent {
-		addNode("end")
-		addEdge(prev.Desc, "end")
+		prevNodeID := prev.Desc + "_" + prev.ID
+		addNode("end_"+prev.ID, "end")
+		addEdge(prevNodeID, "end_"+prev.ID)
 	}
 
 	for _, node := range nodeMap {
